@@ -74,3 +74,86 @@ class RecordGUI(QMainWindow):
 
         ## Combine all 3 forms into a single form ##
         self.stacked_layout = QStackedLayout()
+
+
+        ############################################
+        # Form 0: Client Record Fields
+        ############################################
+        side_by_side_layout = QHBoxLayout()
+
+        self.form_client = QWidget()
+        layout_combined_client = QFormLayout(self.form_client)
+        layout_left_client = QFormLayout()
+        layout_right_client = QFormLayout()
+
+        # Dictionary to store client fields from dataclass
+        self.client_fields: dict[str, QLineEdit] = {}
+
+        # Loop through dataclass fields and auto-populate the widgets
+        for index, f in enumerate(fields(ClientRecord)):
+            label_text = f.metadata.get("label", f.name.replace("_", " ").title())
+            placeholder = f.metadata.get("placeholder", "")
+
+            widget = QLineEdit()
+            if placeholder:
+                widget.setPlaceholderText(placeholder)
+
+            # Store dataclass fields 
+            self.client_fields[f.name] = widget
+
+            # First 6 fields (indices 0 to 5) go Left; everything else goes Right
+            if index < 6:
+                layout_left_client.addRow(f"{label_text}:", widget)
+            else:
+                layout_right_client.addRow(f"{label_text}:", widget)
+
+        # Combine left and right forms to form a grid
+        side_by_side_layout.addLayout(layout_left_client)
+        side_by_side_layout.addLayout(layout_right_client)
+        layout_combined_client.addRow(side_by_side_layout)
+
+
+        ############################################
+        ## Form 1: Airline Record Fields ##
+        ############################################
+        self.form_airline = QWidget()
+        layout_airline = QFormLayout(self.form_airline)
+
+        # Dictionary to store airline fields from dataclass
+        self.airline_fields: dict[str, QLineEdit] = {}
+
+        for index, f in enumerate(fields(AirlineRecord)):
+            label_text = f.metadata.get("label", f.name.replace("_", " ").title())
+            placeholder = f.metadata.get("placeholder", "")
+
+            widget = QLineEdit()
+            if placeholder:
+                widget.setPlaceholderText(placeholder)
+
+            # Store dataclass fields 
+            self.airline_fields[f.name] = widget
+
+            layout_airline.addRow(f"{label_text}:", widget)
+
+
+        ############################################
+        # Form 2: Flight Record Fields
+        ############################################
+        self.form_flight = QWidget()
+        layout_flight = QFormLayout(self.form_flight)
+
+        # Dictionary to store flight fields from dataclass
+        self.flight_fields: dict[str, QLineEdit] = {}
+
+        for index, f in enumerate(fields(FlightRecord)):
+            label_text = f.metadata.get("label", f.name.replace("_", " ").title())
+            placeholder = f.metadata.get("placeholder", "")
+
+            widget = QLineEdit()
+            if placeholder:
+                widget.setPlaceholderText(placeholder)
+
+            # Store dataclass fields 
+            self.flight_fields[f.name] = widget
+
+            layout_flight.addRow(f"{label_text}:", widget)
