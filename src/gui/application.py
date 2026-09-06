@@ -157,3 +157,49 @@ class RecordGUI(QMainWindow):
             self.flight_fields[f.name] = widget
 
             layout_flight.addRow(f"{label_text}:", widget)
+
+
+        ############################################
+        # Combine all 3 Forms together
+        ############################################
+        self.stacked_layout.addWidget(self.form_client)
+        self.stacked_layout.addWidget(self.form_airline)
+        self.stacked_layout.addWidget(self.form_flight)
+
+        # Connect the dropdown to the visible form
+        self.type_dropdown.currentIndexChanged.connect(
+            self.stacked_layout.setCurrentIndex
+        )
+        ############################################
+        ## Assemble the Drop-Down Menu ##
+        ############################################
+        form_group_layout.addWidget(self.type_dropdown)
+        form_group_layout.addLayout(self.stacked_layout)
+
+        self.add_button = QPushButton("Add Record")
+        self.add_button.clicked.connect(self.on_add)
+        form_group_layout.addWidget(self.add_button)
+
+        form_group.setLayout(form_group_layout)
+        main_layout.addWidget(form_group)
+
+        ############################################
+        ## Table View ##
+        ############################################
+        self.table = QTableWidget()
+        self.table.setColumnCount(4)
+        self.table.setHorizontalHeaderLabels(
+            ["Client ID", "Name / Details", "Type"]
+        )
+        self.table.horizontalHeader().setSectionResizeMode(
+            QHeaderView.ResizeMode.Stretch
+        )
+        self.table.setEditTriggers(
+            QAbstractItemView.EditTrigger.NoEditTriggers
+        )
+        self.table.setSelectionBehavior(
+            QAbstractItemView.SelectionBehavior.SelectRows
+        )
+
+        main_layout.addWidget(self.table)
+        self.refresh_table()
