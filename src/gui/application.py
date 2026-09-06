@@ -21,7 +21,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from conf.record_collector import (
+from record.record_management import (
     RecordCollection,
     ClientManagement,
     AirlineManagement,
@@ -203,3 +203,109 @@ class RecordGUI(QMainWindow):
 
         main_layout.addWidget(self.table)
         self.refresh_table()
+
+
+    ############################################
+    # Event Handlers [ add, delete, update ]
+    ############################################ 
+    def on_add(self):
+        """Triggered when the user clicks the 'Add Record' button in the GUI."""
+        current_form_index = self.type_dropdown.currentIndex()
+
+        handler_map = {
+            0: (self.client_fields, self.client_manager),
+            1: (self.airline_fields, self.airline_manager),
+            2: (self.flight_fields, self.flight_manager)
+        }
+
+        active_fields, manager = handler_map[current_form_index]
+
+        if current_form_index == 0:  # Client Form
+            # Fetch all QLineEdit text values into a dictionary
+            record_data = {
+                field_name: widget.text().strip()
+                for field_name, widget in active_fields.items()
+            }
+
+            # Pass the dictionary to collector.add()
+            #self.collector.add(record_data)
+            try:
+                manager.create_record(record_data)
+
+                # Clear all form input boxes in a single loop
+                for widget in self.client_fields.values():
+                    widget.clear()
+
+                self.refresh_table()
+
+            except TypeError as e:
+                QMessageBox.warning(self, "Invalid Record Data", f"Failed to create record:\n{e}")
+
+        elif current_form_index == 1:  # Airline Form
+            record_data = {
+                field_name: widget.text().strip()
+                for field_name, widget in self.airline_fields.items()
+            }
+
+            # Pass dictionary to collector.add()
+            self.collector.add(record_data)
+
+            for widget in self.airline_fields.values():
+                widget.clear()
+
+        # Refresh the table view to show the new record
+        self.refresh_table()
+
+    def refresh_table(self):
+        """Refreshes table columns and populates the latest records using collector.find()."""
+        # Set active record type based on UI selection (e.g., combobox selection)
+        current_index = self.type_dropdown.currentIndex()
+
+        type_map = {
+            0: (ClientRecord, "ClientRecord"),
+            1: (AirlineRecord, "AirlineRecord"),
+            2: (FlightRecord, "FlightRecord")
+        }
+
+        if current_index not in type_map:
+            return
+
+        record_class, target_type = type_map[current_index]
+
+        # Fetch column headers dynamically from the Dataclass fields
+        model_fields = fields(record_class)
+        self.table.setColumnCount(len(model_fields))
+
+        headers = [
+            f.metadata.get("label", f.name.replace("_", " ").title())
+            for f in model_fields
+        ]
+        self.table.setHorizontalHeaderLabels(headers)
+
+        # Poll latest records via collector.find()
+        # Safely handle single dict, list of dicts, or None returns
+        raw_records = self.collector.find(record_type=target_type)
+
+        if raw_records is None:
+            records = []
+        elif isinstance(raw_records, dict):
+            records = [raw_records]
+        else:
+            records = raw_records
+
+        # Clear existing table rows
+        self.table.setRowCount(0)
+
+        # Populate rows and cells
+        for record in records:
+            row_position = self.table.rowCount()
+            self.table.insertRow(row_position)
+
+            for field in enumerate(model_fields):
+                # Extract raw field value from record dict using dataclass field name
+                val = record.get(f.name, "")
+
+                # QTableWidgetItem MUST be instantiated with a string
+                item = QTableWidgetItem(str(val))
+
+                self.table.setItem(row_position, field, item)
