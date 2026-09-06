@@ -4,7 +4,6 @@ from datetime import datetime
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QAbstractItemView,
-    QApplication,
     QHBoxLayout,
     QComboBox,
     QFormLayout,
@@ -23,14 +22,13 @@ from PyQt6.QtWidgets import (
 
 from record.record_management import (
     RecordCollection,
-    ClientManagement,
-    AirlineManagement,
-    FlightManagement
+    RecordManager
 )
 
 from record.airline_record import AirlineRecord
 from record.client_record import ClientRecord
 from record.flight_record import FlightRecord
+from record.record_types import RecordType
 
 
 class RecordGUI(QMainWindow):
@@ -39,10 +37,8 @@ class RecordGUI(QMainWindow):
         super().__init__() # initialise QMainWindow
 
         self.collector = collector # associate RecordCollection to self variable
-        # Create dedicated managers for each record type
-        self.client_manager = ClientManagement(self.collector)
-        self.airline_manager = AirlineManagement(self.collector)
-        self.flight_manager = FlightManagement(self.collector)
+        # Create a record manager for manipulating each record type
+        self.record_manager = RecordManager(self.collector)
 
 
         self.setWindowTitle("Record Management System Project")
@@ -66,7 +62,7 @@ class RecordGUI(QMainWindow):
         # Set drop-down label names
         self.type_dropdown = QComboBox()
         self.type_dropdown.addItems(
-            ["Client Record", "Aireline Record", "Flight Record"]
+            ["Client Record", "Airline Record", "Flight Record"]
         )
         self.type_dropdown.currentIndexChanged.connect(self.refresh_table)
         
@@ -213,12 +209,12 @@ class RecordGUI(QMainWindow):
         current_form_index = self.type_dropdown.currentIndex()
 
         handler_map = {
-            0: (self.client_fields, self.client_manager),
-            1: (self.airline_fields, self.airline_manager),
-            2: (self.flight_fields, self.flight_manager)
+            0: (self.client_fields, self.record_manager, RecordType.CLIENT),
+            1: (self.airline_fields, self.record_manager, RecordType.AIRLINE),
+            2: (self.flight_fields, self.record_manager, RecordType.FLIGHT)
         }
 
-        active_fields, manager = handler_map[current_form_index]
+        active_fields, manager, record_type = handler_map[current_form_index]
 
         if current_form_index == 0:  # Client Form
             # Fetch all QLineEdit text values into a dictionary
@@ -228,9 +224,8 @@ class RecordGUI(QMainWindow):
             }
 
             # Pass the dictionary to collector.add()
-            #self.collector.add(record_data)
             try:
-                manager.create_record(record_data)
+                manager.create_record(record_type, record_data)
 
                 # Clear all form input boxes in a single loop
                 for widget in self.client_fields.values():
@@ -262,15 +257,15 @@ class RecordGUI(QMainWindow):
         current_index = self.type_dropdown.currentIndex()
 
         type_map = {
-            0: (ClientRecord, "ClientRecord"),
-            1: (AirlineRecord, "AirlineRecord"),
-            2: (FlightRecord, "FlightRecord")
+            0: (ClientRecord, RecordType.CLIENT),
+            1: (AirlineRecord, RecordType.AIRLINE),
+            2: (FlightRecord, RecordType.FLIGHT)
         }
 
         if current_index not in type_map:
             return
 
-        record_class, target_type = type_map[current_index]
+        record_class, record_type = type_map[current_index]
 
         # Fetch column headers dynamically from the Dataclass fields
         model_fields = fields(record_class)
@@ -284,7 +279,9 @@ class RecordGUI(QMainWindow):
 
         # Poll latest records via collector.find()
         # Safely handle single dict, list of dicts, or None returns
-        raw_records = self.collector.find(record_type=target_type)
+        #raw_records = self.collector.find(record_type=record_type)
+        #raw_records = self.collector.find() # fine a single record
+        raw_records = self.collector.records
 
         if raw_records is None:
             records = []
@@ -296,16 +293,25 @@ class RecordGUI(QMainWindow):
         # Clear existing table rows
         self.table.setRowCount(0)
 
+        target_str = record_type.value.lower() if hasattr(record_type, "value") else str(record_type).lower()
+
+        records = [
+            rec for rec in records
+            if str(rec.get("record_type", "")).lower() == target_str
+        ]
+
         # Populate rows and cells
         for record in records:
             row_position = self.table.rowCount()
             self.table.insertRow(row_position)
 
-            for field in enumerate(model_fields):
-                # Extract raw field value from record dict using dataclass field name
-                val = record.get(f.name, "")
+            for col_idx, field in enumerate(model_fields):
+                raw_val = record.get(field.name, "")
+
+                # If the value inside the dict is an Enum, extract its string value
+                val_str = raw_val.value if hasattr(raw_val, "value") else str(raw_val)
 
                 # QTableWidgetItem MUST be instantiated with a string
-                item = QTableWidgetItem(str(val))
-
-                self.table.setItem(row_position, field, item)
+                item = QTableWidgetItem(val_str)
+                # Pass row_position (int) and col_idx (int)
+                self.table.setItem(row_position, col_idx, item)

@@ -2,10 +2,10 @@ from abc import ABC, abstractmethod
 import dataclasses
 import json
 from datetime import datetime
-from src.record.client_record import ClientRecord
-from src.record.airline_record import AirlineRecord
-from src.record.flight_record import FlightRecord
-from src.record.record_types import RecordType
+from record.client_record import ClientRecord
+from record.airline_record import AirlineRecord
+from record.flight_record import FlightRecord
+from record.record_types import RecordType
 
 class RecordCollection:
     def __init__(self, file_path: str = "src/data/records.jsonl"):
