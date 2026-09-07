@@ -178,6 +178,20 @@ class FlightManagement(RecordManagement):
         self.collection = collection
 
     def create_record(self, data: dict) -> None:
+        client_id = data["client_id"]
+        airline_id = data["airline_id"]
+        client = self.collection.find(
+            id=client_id,
+            record_type=RecordType.CLIENT.value,
+        )
+        airline = self.collection.find(
+            id=airline_id,
+            record_type=RecordType.AIRLINE.value,
+        )
+        if client is None:
+            raise ValueError(f"Client ID {client_id} does not exist")
+        if airline is None:
+            raise ValueError(f"Airline ID {airline_id} does not exist")
         flight = FlightRecord(**data)
         self.collection.add(dataclasses.asdict(flight))
 
