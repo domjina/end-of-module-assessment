@@ -148,6 +148,9 @@ class RecordGUI(QMainWindow):
             if f.name in EXCLUDE_FIELDS:
                 continue
 
+            label_text = f.metadata.get("label", f.name.replace("_", " ").title())
+            placeholder = f.metadata.get("placeholder", "")
+
             widget = QLineEdit()
             if placeholder:
                 widget.setPlaceholderText(placeholder)
@@ -245,47 +248,55 @@ class RecordGUI(QMainWindow):
         current_form_index = self.type_dropdown.currentIndex()
 
         handler_map = {
-            0: (self.client_fields, self.record_manager, RecordType.CLIENT),
-            1: (self.airline_fields, self.record_manager, RecordType.AIRLINE),
-            2: (self.flight_fields, self.record_manager, RecordType.FLIGHT)
+            0: (self.client_fields, RecordType.CLIENT),
+            1: (self.airline_fields, RecordType.AIRLINE),
+            2: (self.flight_fields, RecordType.FLIGHT)
         }
 
-        active_fields, manager, record_type = handler_map[current_form_index]
+        if current_form_index not in handler_map:
+            return
 
-        if current_form_index == 0:  # Client Form
-            # Fetch all QLineEdit text values into a dictionary
-            record_data = {
-                field_name: widget.text().strip()
-                for field_name, widget in active_fields.items()
-            }
+        active_fields, record_type = handler_map[current_form_index]
+
+        raw_data = {
+            field_name: widget.text().strip()
+            for field_name, widget in active_fields.items()
+        }
+
+        raw_data.pop("id", None)
 
             # Pass the dictionary to collector.add()
-            try:
-                manager.create_record(record_type, record_data)
+        try:
+            # Type conversions for special fields (FlightRecord requires int & datetime)
+            record_data = self._preprocess_record_data(record_type, raw_data)
 
-                # Clear all form input boxes in a single loop
-                for widget in self.client_fields.values():
-                    widget.clear()
+            # Create record using manager call
+            self.record_manager.create_record(record_type, record_data)
 
-                self.refresh_table()
-
-            except TypeError as e:
-                QMessageBox.warning(self, "Invalid Record Data", f"Failed to create record:\n{e}")
-
-        elif current_form_index == 1:  # Airline Form
-            record_data = {
-                field_name: widget.text().strip()
-                for field_name, widget in self.airline_fields.items()
-            }
-
-            # Pass dictionary to collector.add()
-            self.collector.add(record_data)
-
-            for widget in self.airline_fields.values():
+            # Clear active widgets
+            for widget in active_fields.values():
                 widget.clear()
 
-        # Refresh the table view to show the new record
-        self.refresh_table()
+            self.refresh_table()
+
+        except TypeError as e:
+            QMessageBox.warning(self, "Invalid Record Data", f"Failed to create record:\n{e}")
+
+    def _preprocess_record_data(self, record_type: RecordType, raw_data: dict) -> dict:
+            """Converts raw  input into dataclass types."""
+            processed = raw_data.copy()
+
+            # Handle specific field types for FlightRecord
+            if record_type == RecordType.FLIGHT:
+                if "client_id" in processed:
+                    processed["client_id"] = int(processed["client_id"])
+                if "airline_id" in processed:
+                    processed["airline_id"] = int(processed["airline_id"])
+                if "date" in processed and isinstance(processed["date"], str):
+                    # Adjust date format string if your UI uses something other than YYYY-MM-DD
+                    processed["date"] = datetime.strptime(processed["date"], "%Y-%m-%d")
+
+            return processed
 
     def refresh_table(self):
         """Refreshes table columns and populates the latest records using collector.find()."""
