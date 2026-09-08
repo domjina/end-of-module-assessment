@@ -26,7 +26,7 @@ class RecordCollection:
         ]
 
         return max(
-            (record["id"] for record in matching_records),
+            (int(record["id"]) for record in matching_records if "id" in record and str(record["id"]).isdigit()),
             default=0
         ) + 1
 
