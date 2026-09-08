@@ -13,34 +13,26 @@ class RecordCollection:
         self.file_path = file_path
         self.load()
 
-    def get_next_id(self, record_class: type) -> int:
-        field_names = {
-            field.name
-            for field in dataclasses.fields(record_class)
-        }
-
-        matching_records = [
-            record
-            for record in self.records
-            if field_names.issubset(record.keys())
-        ]
-
-        return max(
-            (record["id"] for record in matching_records),
-            default=0
-        ) + 1
+    def get_next_id(self, record_type: str) -> int:
+        max_id = 0
+        for record in self.records:
+            if record.get("record_type") == record_type:
+                max_id = max(max_id, record["id"])
+        return max_id + 1
 
     def add(self, record: dict) -> None:
         self.records.append(record)
         self.save()
 
-    def delete(self, **criteria) -> bool:
+    def delete(self, record_type: str | None = None, **criteria) -> bool:
         for index, record in enumerate(self.records):
+            if record_type is not None and record.get("record_type") != record_type:
+                continue
+
             if all(record.get(key) == value for key, value in criteria.items()):
                 del self.records[index]
                 self.save()
                 return True
-
         return False
 
     def update(self, new_record: dict, **criteria) -> bool:
@@ -52,10 +44,14 @@ class RecordCollection:
 
         return False
 
-    def find(self, **criteria) -> dict | None:
+    def find(self, record_type: str | None = None, **criteria) -> dict | None:
         for record in self.records:
+            if record_type is not None and record.get("record_type") != record_type:
+                continue
+
             if all(record.get(key) == value for key, value in criteria.items()):
                 return record
+
         return None
 
     def save(self) -> None:
@@ -116,12 +112,13 @@ class ClientManagement(RecordManagement):
         self.collection = collection
 
     def create_record(self, data: dict) -> None:
-        next_id = self.collection.get_next_id(ClientRecord)
+        next_id = self.collection.get_next_id(RecordType.CLIENT.value)
         client = ClientRecord(id=next_id, **data)
         self.collection.add(dataclasses.asdict(client))
 
     def delete_record(self, **criteria) -> bool:
         return self.collection.delete(
+            record_type=RecordType.CLIENT.value,
             id=criteria["record_id"]
         )
 
@@ -140,6 +137,7 @@ class ClientManagement(RecordManagement):
 
     def search_display_record(self, **criteria) -> dict | None:
         return self.collection.find(
+            record_type=RecordType.CLIENT.value,
             id=criteria["record_id"]
         )
 
@@ -148,12 +146,13 @@ class AirlineManagement(RecordManagement):
         self.collection = collection
 
     def create_record(self, data: dict) -> None:
-        next_id = self.collection.get_next_id(AirlineRecord)
+        next_id = self.collection.get_next_id(RecordType.AIRLINE.value)
         airline = AirlineRecord(id=next_id, **data)
         self.collection.add(dataclasses.asdict(airline))
 
     def delete_record(self, **criteria) -> bool:
         return self.collection.delete(
+            record_type=RecordType.AIRLINE.value,
             id=criteria["record_id"]
         )
 
@@ -170,6 +169,7 @@ class AirlineManagement(RecordManagement):
 
     def search_display_record(self, **criteria) -> dict | None:
         return self.collection.find(
+            record_type=RecordType.AIRLINE.value,
             id=criteria["record_id"]
         )
 
@@ -181,12 +181,12 @@ class FlightManagement(RecordManagement):
         client_id = data["client_id"]
         airline_id = data["airline_id"]
         client = self.collection.find(
-            id=client_id,
             record_type=RecordType.CLIENT.value,
+            id=client_id
         )
         airline = self.collection.find(
-            id=airline_id,
             record_type=RecordType.AIRLINE.value,
+            id=airline_id
         )
         if client is None:
             raise ValueError(f"Client ID {client_id} does not exist")
