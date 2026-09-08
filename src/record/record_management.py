@@ -1,11 +1,22 @@
 from abc import ABC, abstractmethod
 import dataclasses
 import json
+import os
+import tempfile
 from datetime import datetime
+from pathlib import Path
 from src.record.client_record import ClientRecord
 from src.record.airline_record import AirlineRecord
 from src.record.flight_record import FlightRecord
 from src.record.record_types import RecordType
+from src.record.validation import ValidationError, validate_stored_record
+
+class PersistenceError(Exception):
+    """Raised when records cannot be loaded from / saved to the file system.
+
+    Messages include the file path and, for a malformed line, its 1-based
+    physical line number so the stored file can be corrected.
+    """
 
 class RecordCollection:
     def __init__(self, file_path: str = "src/data/records.jsonl"):
@@ -30,15 +41,28 @@ class RecordCollection:
             default=0
         ) + 1
 
+    def _commit(self, mutate) -> None:
+        """Apply ``mutate()`` to ``self.records`` and persist the result.
+
+        If ``save()`` fails, ``self.records`` is restored to its exact
+        pre-operation contents and the ``PersistenceError`` is re-raised, so the
+        in-memory list and the file on disk never disagree.
+        """
+        snapshot = list(self.records)
+        mutate()
+        try:
+            self.save()
+        except PersistenceError:
+            self.records = snapshot
+            raise
+
     def add(self, record: dict) -> None:
-        self.records.append(record)
-        self.save()
+        self._commit(lambda: self.records.append(record))
 
     def delete(self, **criteria) -> bool:
         for index, record in enumerate(self.records):
             if all(record.get(key) == value for key, value in criteria.items()):
-                del self.records[index]
-                self.save()
+                self._commit(lambda index=index: self.records.pop(index))
                 return True
 
         return False
@@ -46,8 +70,9 @@ class RecordCollection:
     def update(self, new_record: dict, **criteria) -> bool:
         for index, record in enumerate(self.records):
             if all(record.get(key) == value for key, value in criteria.items()):
-                self.records[index] = new_record
-                self.save()
+                self._commit(
+                    lambda index=index: self.records.__setitem__(index, new_record)
+                )
                 return True
 
         return False
@@ -59,27 +84,131 @@ class RecordCollection:
         return None
 
     def save(self) -> None:
-        with open(self.file_path, "w", encoding="utf-8") as file:
-            for record in self.records:
-                json.dump(
-                    record,
-                    file,
-                    default=self._json_serializer
-                )
-                file.write("\n")
+        """Write ``self.records`` to ``self.file_path`` atomically.
+
+        The records are serialised up front, written to a temporary file in the
+        destination directory and closed, and only then moved into place with
+        ``os.replace``. If serialisation, writing or the replacement fails, the
+        previous destination file is left untouched, the temporary file is
+        removed (without hiding the original error), and a ``PersistenceError``
+        naming the destination and the failed operation is raised.
+        """
+        destination = self.file_path
+        directory = Path(destination).parent
+
+        try:
+            directory.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            raise PersistenceError(
+                f"cannot save {destination}: creating its directory failed: {exc}"
+            ) from exc
+
+        try:
+            payload = "".join(
+                json.dumps(record, default=self._json_serializer) + "\n"
+                for record in self.records
+            )
+        except TypeError as exc:
+            raise PersistenceError(
+                f"cannot save {destination}: serialising the records failed: {exc}"
+            ) from exc
+
+        try:
+            handle, temp_path = tempfile.mkstemp(
+                dir=directory,
+                prefix=Path(destination).name + ".",
+                suffix=".tmp",
+            )
+        except OSError as exc:
+            raise PersistenceError(
+                f"cannot save {destination}: creating a temporary file failed: {exc}"
+            ) from exc
+        os.close(handle)
+
+        try:
+            try:
+                with open(temp_path, "w", encoding="utf-8") as temp_file:
+                    temp_file.write(payload)
+            except OSError as exc:
+                raise PersistenceError(
+                    f"cannot save {destination}: writing the temporary file failed: {exc}"
+                ) from exc
+
+            try:
+                os.replace(temp_path, destination)
+            except OSError as exc:
+                raise PersistenceError(
+                    f"cannot save {destination}: replacing the destination file failed: {exc}"
+                ) from exc
+        finally:
+            if os.path.exists(temp_path):
+                try:
+                    os.remove(temp_path)
+                except OSError:
+                    pass
 
     def load(self) -> None:
+        """Load records from ``self.file_path`` into ``self.records``.
+
+        The whole file is parsed into a temporary list first; ``self.records``
+        is replaced only once every non-blank line has been read as a JSON
+        object with a parseable ``date`` (when present) and a recognised record
+        structure. On any failure a ``PersistenceError`` naming the file and the
+        1-based physical line is raised and both the file on disk and the
+        current in-memory list are left unchanged. A missing file is treated as
+        an empty store and created.
+        """
         try:
-            with open(self.file_path, "r", encoding="utf-8") as file:
-                self.records = [
-                    json.loads(line)
-                    for line in file
-                    if line.strip()
-                ]
-            self._convert_dates()
+            Path(self.file_path).parent.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            raise PersistenceError(
+                f"cannot create storage directory for {self.file_path}: {exc}"
+            ) from exc
+
+        try:
+            file = open(self.file_path, "r", encoding="utf-8")
         except FileNotFoundError:
             self.records = []
             self.save()
+            return
+        except OSError as exc:
+            raise PersistenceError(
+                f"cannot read {self.file_path}: {exc}"
+            ) from exc
+
+        parsed: list[dict] = []
+        with file:
+            for line_number, line in enumerate(file, start=1):
+                if not line.strip():
+                    continue
+                try:
+                    record = json.loads(line)
+                except json.JSONDecodeError as exc:
+                    raise PersistenceError(
+                        f"{self.file_path}:{line_number}: invalid JSON: {exc.msg}"
+                    ) from exc
+                if not isinstance(record, dict):
+                    raise PersistenceError(
+                        f"{self.file_path}:{line_number}: expected a JSON object, "
+                        f"got {type(record).__name__}"
+                    )
+                if isinstance(record.get("date"), str):
+                    try:
+                        record["date"] = datetime.fromisoformat(record["date"])
+                    except ValueError as exc:
+                        raise PersistenceError(
+                            f"{self.file_path}:{line_number}: invalid date "
+                            f"{record['date']!r}"
+                        ) from exc
+                try:
+                    validate_stored_record(record)
+                except ValidationError as exc:
+                    raise PersistenceError(
+                        f"{self.file_path}:{line_number}: {exc}"
+                    ) from exc
+                parsed.append(record)
+
+        self.records = parsed
 
     @staticmethod
     def _json_serializer(value):
