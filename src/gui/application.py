@@ -272,22 +272,6 @@ class RecordGUI(QMainWindow):
     ############################################
     # Event Handlers [ add, delete, update ]
     ############################################ 
-    def _preprocess_record_data(self, record_type: RecordType, raw_data: dict) -> dict:
-            """Converts raw  input into dataclass types."""
-            processed = raw_data.copy()
-
-            # Handle specific field types for FlightRecord
-            if record_type == RecordType.FLIGHT:
-                if "client_id" in processed:
-                    processed["client_id"] = int(processed["client_id"])
-                if "airline_id" in processed:
-                    processed["airline_id"] = int(processed["airline_id"])
-                if "date" in processed and isinstance(processed["date"], str):
-                    # Adjust date format string if your UI uses something other than YYYY-MM-DD
-                    processed["date"] = datetime.strptime(processed["date"], "%Y-%m-%d")
-
-            return processed
-
     def refresh_table(self):
         """Refreshes table columns and populates the latest records using collector.find()."""
         # Set active record type based on UI selection (e.g., combobox selection)
@@ -366,33 +350,40 @@ class RecordGUI(QMainWindow):
 
         active_fields, record_type = handler_map[current_form_index]
 
-        raw_data = {
-            field_name: widget.text().strip()
-            for field_name, widget in active_fields.items()
-        }
+        record_data = {}
+        for field_name, widget in active_fields.items():
+            if field_name == "id":
+                continue  # Skip ID field on creation
+            
+            if isinstance(widget, QDateEdit):
+                record_data[field_name] = widget.date().toString("yyyy-MM-dd")
+            elif isinstance(widget, QLineEdit):
+                val = widget.text().strip()
+                # Update ID reference fields (e.g., client_id, airline_id) to int
+                record_data[field_name] = int(val) if val.isdigit() and "id" in field_name else val
 
-        raw_data.pop("id", None)
-
-            # Pass the dictionary to collector.add()
         try:
-            # Type conversions for special fields (FlightRecord requires int & datetime)
-            record_data = self._preprocess_record_data(record_type, raw_data)
-
-            # Create record using manager call
+            # Create record using manager call directly
             self.record_manager.create_record(record_type, record_data)
 
-            # Clear active widgets
-            for widget in active_fields.values():
-                widget.clear()
+            # Reset active widgets
+            for field_name, widget in active_fields.items():
+                if field_name in ("record_type", "id"):
+                    continue
 
+                if isinstance(widget, QDateEdit):
+                    widget.setDate(QDate.currentDate())
+                elif hasattr(widget, "clear"):
+                    widget.clear()
+
+            # Ensure default record_type persist
             if "record_type" in active_fields:
                 default_val = getattr(record_type, "value", record_type) if record_type else ""
                 active_fields["record_type"].setText(str(default_val))
 
-
             self.refresh_table()
 
-        except TypeError as e:
+        except Exception as e:
             QMessageBox.warning(self, "Invalid Record Data", f"Failed to create record:\n{e}")
 
     def on_delete(self):
@@ -461,18 +452,18 @@ class RecordGUI(QMainWindow):
             id_item = self.table.item(selected_row, 0)
             record_id_str = id_item.text() if id_item else ""
 
-            raw_data = {}
+            record_data = {}
             for field_name, widget in active_fields.items():
                 if isinstance(widget, QDateEdit):
-                    raw_data[field_name] = widget.date().toString("yyyy-MM-dd")
+                    record_data[field_name] = widget.date().toString("yyyy-MM-dd")
                 elif isinstance(widget, QLineEdit):
-                    raw_data[field_name] = widget.text().strip()
+                    val = widget.text().strip()
+                    record_data[field_name] = int(val) if val.isdigit() and "id" in field_name else val
 
             try:
-                record_data = self._preprocess_record_data(record_type, raw_data)
                 record_id = int(record_id_str) if record_id_str.isdigit() else record_id_str
 
-                # Perform update passing both record_id AND row_index
+                # Update directly through RecordManager
                 success = self.record_manager.update_record(
                     record_type=record_type,
                     data=record_data,
@@ -485,7 +476,7 @@ class RecordGUI(QMainWindow):
                 else:
                     QMessageBox.warning(self, "Update Failed", "Record could not be updated.")
 
-            except (TypeError, ValueError, Exception) as e:
+            except Exception as e:
                 QMessageBox.warning(self, "Update Error", f"Failed to update record:\n{e}")
 
     def on_table_row_clicked(self, row: int, column: int):
