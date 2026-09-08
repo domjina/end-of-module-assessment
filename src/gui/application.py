@@ -306,7 +306,7 @@ class RecordGUI(QMainWindow):
         type_map = {
             0: (ClientRecord, RecordType.CLIENT),
             1: (AirlineRecord, RecordType.AIRLINE),
-            2: (FlightRecord, RecordType.FLIGHT)
+            2: (FlightRecord, "")
         }
 
         if current_index not in type_map:
@@ -326,8 +326,6 @@ class RecordGUI(QMainWindow):
 
         # Poll latest records via collector.find()
         # Safely handle single dict, list of dicts, or None returns
-        #raw_records = self.collector.find(record_type=record_type)
-        #raw_records = self.collector.find() # fine a single record
         raw_records = self.collector.records
 
         if raw_records is None:
@@ -336,7 +334,7 @@ class RecordGUI(QMainWindow):
             records = [raw_records]
         else:
             records = raw_records
-
+        
         # Clear existing table rows
         self.table.setRowCount(0)
 
@@ -362,3 +360,4 @@ class RecordGUI(QMainWindow):
                 item = QTableWidgetItem(val_str)
                 # Pass row_position (int) and col_idx (int)
                 self.table.setItem(row_position, col_idx, item)
+                
