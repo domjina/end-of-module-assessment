@@ -231,8 +231,17 @@ class RecordGUI(QMainWindow):
         form_group_layout.addLayout(self.stacked_layout)
 
         self.add_button = QPushButton("Add Record")
+        self.update_button = QPushButton("Update Selected")
+        self.delete_button = QPushButton("Delete Selected")
+
+        # Connect EACH button to its respective handler
         self.add_button.clicked.connect(self.on_add)
+        self.update_button.clicked.connect(self.on_update)
+        self.delete_button.clicked.connect(self.on_delete)
+
         form_group_layout.addWidget(self.add_button)
+        form_group_layout.addWidget(self.update_button)
+        form_group_layout.addWidget(self.delete_button)
 
         form_group.setLayout(form_group_layout)
         main_layout.addWidget(form_group)
@@ -256,56 +265,13 @@ class RecordGUI(QMainWindow):
         )
 
         main_layout.addWidget(self.table)
+        self.table.cellClicked.connect(self.on_table_row_clicked)
         self.refresh_table()
 
 
     ############################################
     # Event Handlers [ add, delete, update ]
     ############################################ 
-    def on_add(self):
-        """Triggered when the user clicks the 'Add Record' button in the GUI."""
-        current_form_index = self.type_dropdown.currentIndex()
-
-        handler_map = {
-            0: (self.client_fields, RecordType.CLIENT),
-            1: (self.airline_fields, RecordType.AIRLINE),
-            2: (self.flight_fields, RecordType.FLIGHT)
-        }
-
-        if current_form_index not in handler_map:
-            return
-
-        active_fields, record_type = handler_map[current_form_index]
-
-        raw_data = {
-            field_name: widget.text().strip()
-            for field_name, widget in active_fields.items()
-        }
-
-        raw_data.pop("id", None)
-
-            # Pass the dictionary to collector.add()
-        try:
-            # Type conversions for special fields (FlightRecord requires int & datetime)
-            record_data = self._preprocess_record_data(record_type, raw_data)
-
-            # Create record using manager call
-            self.record_manager.create_record(record_type, record_data)
-
-            # Clear active widgets
-            for widget in active_fields.values():
-                widget.clear()
-
-            if "record_type" in active_fields:
-                default_val = getattr(record_type, "value", record_type) if record_type else ""
-                active_fields["record_type"].setText(str(default_val))
-
-
-            self.refresh_table()
-
-        except TypeError as e:
-            QMessageBox.warning(self, "Invalid Record Data", f"Failed to create record:\n{e}")
-
     def _preprocess_record_data(self, record_type: RecordType, raw_data: dict) -> dict:
             """Converts raw  input into dataclass types."""
             processed = raw_data.copy()
@@ -384,4 +350,171 @@ class RecordGUI(QMainWindow):
                 item = QTableWidgetItem(val_str)
                 # Pass row_position (int) and col_idx (int)
                 self.table.setItem(row_position, col_idx, item)
-                
+
+    def on_add(self):
+        """Triggered when the user clicks the 'Add Record' button in the GUI."""
+        current_form_index = self.type_dropdown.currentIndex()
+
+        handler_map = {
+            0: (self.client_fields, RecordType.CLIENT),
+            1: (self.airline_fields, RecordType.AIRLINE),
+            2: (self.flight_fields, RecordType.FLIGHT)
+        }
+
+        if current_form_index not in handler_map:
+            return
+
+        active_fields, record_type = handler_map[current_form_index]
+
+        raw_data = {
+            field_name: widget.text().strip()
+            for field_name, widget in active_fields.items()
+        }
+
+        raw_data.pop("id", None)
+
+            # Pass the dictionary to collector.add()
+        try:
+            # Type conversions for special fields (FlightRecord requires int & datetime)
+            record_data = self._preprocess_record_data(record_type, raw_data)
+
+            # Create record using manager call
+            self.record_manager.create_record(record_type, record_data)
+
+            # Clear active widgets
+            for widget in active_fields.values():
+                widget.clear()
+
+            if "record_type" in active_fields:
+                default_val = getattr(record_type, "value", record_type) if record_type else ""
+                active_fields["record_type"].setText(str(default_val))
+
+
+            self.refresh_table()
+
+        except TypeError as e:
+            QMessageBox.warning(self, "Invalid Record Data", f"Failed to create record:\n{e}")
+
+    def on_delete(self):
+            """Triggered when the user clicks 'Delete Record'."""
+            selected_row = self.table.currentRow()
+            if selected_row < 0:
+                QMessageBox.warning(self, "Selection Error", "Please select a row from the table to delete.")
+                return
+
+            current_form_index = self.type_dropdown.currentIndex()
+            handler_map = {
+                0: RecordType.CLIENT,
+                1: RecordType.AIRLINE,
+                2: RecordType.FLIGHT,
+            }
+            record_type = handler_map.get(current_form_index)
+
+            # Retrieve record identifier from column 0 (usually "id")
+            id_item = self.table.item(selected_row, 0)
+            record_id_str = id_item.text() if id_item else ""
+
+            # Confirm before deletion (pop-up box)
+            confirm = QMessageBox.question(
+                self,
+                "Confirm Delete",
+                f"Are you sure you want to delete row {selected_row + 1}?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            )
+            if confirm != QMessageBox.StandardButton.Yes:
+                return
+
+            try:
+                # Parse record_id as integer if present
+                record_id = int(record_id_str) if record_id_str.isdigit() else record_id_str
+
+                success = self.record_manager.delete_record(
+                    record_type=record_type,
+                    record_id=record_id,
+                    row_index=selected_row 
+                )
+
+                if success:
+                    self.refresh_table()
+                else:
+                    QMessageBox.warning(self, "Delete Failed", "Record could not be found or deleted.")
+
+            except Exception as e:
+                QMessageBox.warning(self, "Delete Error", f"Error during deletion:\n{e}")
+
+    def on_update(self):
+            """Triggered when the user clicks 'Update Selected'."""
+            selected_row = self.table.currentRow()
+            if selected_row < 0:
+                QMessageBox.warning(self, "Selection Error", "Please select a row from the table to update.")
+                return
+
+            current_form_index = self.type_dropdown.currentIndex()
+            handler_map = {
+                0: (self.client_fields, RecordType.CLIENT),
+                1: (self.airline_fields, RecordType.AIRLINE),
+                2: (self.flight_fields, RecordType.FLIGHT),
+            }
+            active_fields, record_type = handler_map[current_form_index]
+
+            # Pull primary key ID from column 0 (if present)
+            id_item = self.table.item(selected_row, 0)
+            record_id_str = id_item.text() if id_item else ""
+
+            raw_data = {}
+            for field_name, widget in active_fields.items():
+                if isinstance(widget, QDateEdit):
+                    raw_data[field_name] = widget.date().toString("yyyy-MM-dd")
+                elif isinstance(widget, QLineEdit):
+                    raw_data[field_name] = widget.text().strip()
+
+            try:
+                record_data = self._preprocess_record_data(record_type, raw_data)
+                record_id = int(record_id_str) if record_id_str.isdigit() else record_id_str
+
+                # Perform update passing both record_id AND row_index
+                success = self.record_manager.update_record(
+                    record_type=record_type,
+                    data=record_data,
+                    record_id=record_id,
+                    row_index=selected_row
+                )
+
+                if success:
+                    self.refresh_table()
+                else:
+                    QMessageBox.warning(self, "Update Failed", "Record could not be updated.")
+
+            except (TypeError, ValueError, Exception) as e:
+                QMessageBox.warning(self, "Update Error", f"Failed to update record:\n{e}")
+
+    def on_table_row_clicked(self, row: int, column: int):
+            """Populates form fields when a row in the QTableWidget is clicked."""
+            current_index = self.type_dropdown.currentIndex()
+            handler_map = {
+                0: (self.client_fields, ClientRecord),
+                1: (self.airline_fields, AirlineRecord),
+                2: (self.flight_fields, FlightRecord),
+            }
+
+            if current_index not in handler_map:
+                return
+
+            active_fields, record_class = handler_map[current_index]
+            model_fields = [f.name for f in fields(record_class)]
+
+            for col_idx, field_name in enumerate(model_fields):
+                if field_name not in active_fields:
+                    continue
+
+                widget = active_fields[field_name]
+                item = self.table.item(row, col_idx)
+                cell_value = item.text() if item else ""
+
+                if isinstance(widget, QDateEdit):
+                    # Parse string date (e.g. "2026-09-08") into QDate
+                    qdate = QDate.fromString(cell_value, "yyyy-MM-dd")
+                    if qdate.isValid():
+                        widget.setDate(qdate)
+                elif isinstance(widget, QLineEdit):
+                    widget.setText(cell_value)
