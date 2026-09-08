@@ -296,6 +296,11 @@ class RecordGUI(QMainWindow):
             for widget in active_fields.values():
                 widget.clear()
 
+            if "record_type" in active_fields:
+                default_val = getattr(record_type, "value", record_type) if record_type else ""
+                active_fields["record_type"].setText(str(default_val))
+
+
             self.refresh_table()
 
         except TypeError as e:
