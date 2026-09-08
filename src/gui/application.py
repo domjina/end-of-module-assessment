@@ -85,8 +85,21 @@ class RecordGUI(QMainWindow):
         # Dictionary to store client fields from dataclass
         self.client_fields: dict[str, QLineEdit] = {}
 
+        ### NEW
+        # Fields to omit from the UI entirely
+        EXCLUDE_FIELDS = {"id"}
+
+        # Fields to display as non-editable
+        READ_ONLY_FIELDS = {"record_type"}
+
+        visible_count = 0
+
         # Loop through dataclass fields and auto-populate the widgets
-        for index, f in enumerate(fields(ClientRecord)):
+        for f in fields(ClientRecord):
+            # Skip hidden fields (e.g., 'id')
+            if f.name in EXCLUDE_FIELDS:
+                continue
+
             label_text = f.metadata.get("label", f.name.replace("_", " ").title())
             placeholder = f.metadata.get("placeholder", "")
 
@@ -94,14 +107,26 @@ class RecordGUI(QMainWindow):
             if placeholder:
                 widget.setPlaceholderText(placeholder)
 
+            # Read-only fields (e.g., 'record_type')
+            if f.name in READ_ONLY_FIELDS:
+                widget.setReadOnly(True)
+
+            # Prefill record_type default value
+            if f.name == "record_type":
+                # Handles both StrEnum/Enum or standard strings
+                default_val = getattr(RecordType.CLIENT, "value", RecordType.CLIENT)
+                widget.setText(str(default_val))
+
             # Store dataclass fields 
             self.client_fields[f.name] = widget
 
             # First 6 fields (indices 0 to 5) go Left; everything else goes Right
-            if index < 6:
+            if visible_count < 6:
                 layout_left_client.addRow(f"{label_text}:", widget)
             else:
                 layout_right_client.addRow(f"{label_text}:", widget)
+
+            visible_count += 1
 
         # Combine left and right forms to form a grid
         side_by_side_layout.addLayout(layout_left_client)
