@@ -71,6 +71,12 @@ class RecordGUI(QMainWindow):
         ## Combine all 3 forms into a single form ##
         self.stacked_layout = QStackedLayout()
 
+        # Fields to omit from the UI entirely
+        EXCLUDE_FIELDS = {"id"}
+
+        # Fields to display as non-editable
+        READ_ONLY_FIELDS = {"record_type"}
+
 
         ############################################
         # Form 0: Client Record Fields
@@ -84,13 +90,6 @@ class RecordGUI(QMainWindow):
 
         # Dictionary to store client fields from dataclass
         self.client_fields: dict[str, QLineEdit] = {}
-
-        ### NEW
-        # Fields to omit from the UI entirely
-        EXCLUDE_FIELDS = {"id"}
-
-        # Fields to display as non-editable
-        READ_ONLY_FIELDS = {"record_type"}
 
         visible_count = 0
 
@@ -143,13 +142,25 @@ class RecordGUI(QMainWindow):
         # Dictionary to store airline fields from dataclass
         self.airline_fields: dict[str, QLineEdit] = {}
 
-        for index, f in enumerate(fields(AirlineRecord)):
-            label_text = f.metadata.get("label", f.name.replace("_", " ").title())
-            placeholder = f.metadata.get("placeholder", "")
+        # Loop through dataclass fields and auto-populate the widgets
+        for f in fields(AirlineRecord):
+            # Skip hidden fields (e.g., 'id')
+            if f.name in EXCLUDE_FIELDS:
+                continue
 
             widget = QLineEdit()
             if placeholder:
                 widget.setPlaceholderText(placeholder)
+
+            # Read-only fields (e.g., 'record_type')
+            if f.name in READ_ONLY_FIELDS:
+                widget.setReadOnly(True)
+
+            # Prefill record_type default value
+            if f.name == "record_type":
+                # Handles both StrEnum/Enum or standard strings
+                default_val = getattr(RecordType.AIRLINE, "value", RecordType.AIRLINE)
+                widget.setText(str(default_val))
 
             # Store dataclass fields 
             self.airline_fields[f.name] = widget
