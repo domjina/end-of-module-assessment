@@ -1,11 +1,12 @@
 from dataclasses import fields
 from datetime import datetime
 
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import QDate
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QHBoxLayout,
     QComboBox,
+    QDateEdit,
     QFormLayout,
     QGroupBox,
     QHeaderView,
@@ -178,19 +179,37 @@ class RecordGUI(QMainWindow):
         layout_flight = QFormLayout(self.form_flight)
 
         # Dictionary to store flight fields from dataclass
-        self.flight_fields: dict[str, QLineEdit] = {}
+        self.flight_fields: dict[str, QWidget] = {}
 
-        for index, f in enumerate(fields(FlightRecord)):
+        # Iterate over fields
+        for f in fields(FlightRecord):
+            if f.name in EXCLUDE_FIELDS:
+                continue
+
             label_text = f.metadata.get("label", f.name.replace("_", " ").title())
             placeholder = f.metadata.get("placeholder", "")
 
-            widget = QLineEdit()
-            if placeholder:
-                widget.setPlaceholderText(placeholder)
+            # Initiate QDateEdit (for date field) OR QLineEdit 
+            if f.name == "date":
+                widget = QDateEdit()
+                widget.setCalendarPopup(True)          # Enables visual dropdown calendar
+                widget.setDate(QDate.currentDate())    # Default to current date
+                widget.setDisplayFormat("yyyy-MM-dd")  # Enforces YYYY-MM-DD format
+            else:
+                widget = QLineEdit()
+                if placeholder:
+                    widget.setPlaceholderText(placeholder)
 
-            # Store dataclass fields 
+                if f.name in READ_ONLY_FIELDS:
+                    widget.setReadOnly(True)
+
+                if f.name == "record_type":
+                    widget.setText("")
+
+            # Store dataclass fields
             self.flight_fields[f.name] = widget
 
+            # Add row to layout
             layout_flight.addRow(f"{label_text}:", widget)
 
 
