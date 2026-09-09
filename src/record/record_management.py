@@ -96,7 +96,7 @@ class RecordCollection:
                     for line in file
                     if line.strip()
                 ]
-            self._convert_dates()
+            self._convert_types()
         except FileNotFoundError:
             self.records = []
             self.save()
@@ -109,10 +109,16 @@ class RecordCollection:
             f"Object of type {type(value).__name__} is not JSON serializable"
         )
 
-    def _convert_dates(self) -> None:
+    def _convert_types(self) -> None:
         for record in self.records:
             if "date" in record and isinstance(record["date"], str):
                 record["date"] = datetime.fromisoformat(record["date"])
+            if "id" in record:
+                record["id"] = int(record["id"])
+            if "client_id" in record:
+                record["client_id"] = int(record["client_id"])
+            if "airline_id" in record:
+                record["airline_id"] = int(record["airline_id"])
 
 class RecordManagement(ABC):
     @abstractmethod
