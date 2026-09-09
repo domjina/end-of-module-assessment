@@ -123,7 +123,7 @@ class ClientManagement(RecordManagement):
 
     def create_record(self, data: dict) -> None:
         next_id = self.collection.get_next_id(RecordType.CLIENT.value)
-        client = ClientRecord(id=next_id, **data)
+        client = ClientRecord(id=next_id, record_type=RecordType.CLIENT.value, **data)
         self.collection.add(dataclasses.asdict(client))
 
     def delete_record(self, **criteria) -> bool:
@@ -137,6 +137,7 @@ class ClientManagement(RecordManagement):
 
         client = ClientRecord(
             id=record_id,
+            record_type=RecordType.CLIENT.value,
             **data
         )
 
@@ -157,7 +158,7 @@ class AirlineManagement(RecordManagement):
 
     def create_record(self, data: dict) -> None:
         next_id = self.collection.get_next_id(RecordType.AIRLINE.value)
-        airline = AirlineRecord(id=next_id, **data)
+        airline = AirlineRecord(id=next_id, record_type=RecordType.AIRLINE.value, **data)
         self.collection.add(dataclasses.asdict(airline))
 
     def delete_record(self, **criteria) -> bool:
@@ -170,6 +171,7 @@ class AirlineManagement(RecordManagement):
         record_id = criteria["record_id"]
         airline = AirlineRecord(
             id=record_id,
+            record_type=RecordType.AIRLINE.value,
             **data
         )
         return self.collection.update(
