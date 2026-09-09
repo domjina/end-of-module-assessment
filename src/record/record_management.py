@@ -1,3 +1,4 @@
+"""Provide record management and persistent record collection functionality."""
 from abc import ABC, abstractmethod
 import dataclasses
 import json
@@ -8,12 +9,14 @@ from src.record.flight_record import FlightRecord
 from src.record.record_types import RecordType
 
 class RecordCollection:
+    """Manage the shared collection of records and persistent storage."""
     def __init__(self, file_path: str = "src/data/records.jsonl"):
         self.records: list[dict] = []
         self.file_path = file_path
         self.load()
 
     def get_next_id(self, record_type: str) -> int:
+        """Return the next unused ID for the specific record type."""
         max_id = 0
         for record in self.records:
             if record_type == RecordType.CLIENT.value:
@@ -31,10 +34,12 @@ class RecordCollection:
         return max_id + 1
 
     def add(self, record: dict) -> None:
+        """Add a record to the collection and save the updated data."""
         self.records.append(record)
         self.save()
 
     def delete(self, record_type: str | None = None, **criteria) -> bool:
+        """Delete the first record matching the supplied criteria."""
         for index, record in enumerate(self.records):
             if record_type is not None and record.get("record_type") != record_type:
                 continue
@@ -46,6 +51,7 @@ class RecordCollection:
         return False
 
     def update(self, new_record: dict, **criteria) -> bool:
+        """Replace the first record matching the supplied criteria."""
         for index, record in enumerate(self.records):
             if all(record.get(key) == value for key, value in criteria.items()):
                 self.records[index] = new_record
@@ -55,6 +61,7 @@ class RecordCollection:
         return False
 
     def find(self, record_type: str | None = None, **criteria) -> dict | None:
+        """Return the first record matching the supplied criteria."""
         for record in self.records:
             if record_type is not None and record.get("record_type") != record_type:
                 continue
@@ -70,6 +77,7 @@ class RecordCollection:
             search_term: str,
             record_type: str | None = None
     ) -> list[dict]:
+        """Return all records whose specified field matches the search term."""
         matches = []
         for record in self.records:
             if record_type is not None and record.get("record_type") != record_type:
@@ -79,6 +87,7 @@ class RecordCollection:
         return matches
 
     def save(self) -> None:
+        """Save all records to the JSONL data file."""
         with open(self.file_path, "w", encoding="utf-8") as file:
             for record in self.records:
                 json.dump(
@@ -89,6 +98,7 @@ class RecordCollection:
                 file.write("\n")
 
     def load(self) -> None:
+        """Load the records from the JSONL data file."""
         try:
             with open(self.file_path, "r", encoding="utf-8") as file:
                 self.records = [
@@ -103,6 +113,7 @@ class RecordCollection:
 
     @staticmethod
     def _json_serializer(value):
+        """Convert datetime values into JSON-compatible ISO strings."""
         if isinstance(value, datetime):
             return value.isoformat()
         raise TypeError(
@@ -121,23 +132,25 @@ class RecordCollection:
                 record["airline_id"] = int(record["airline_id"])
 
 class RecordManagement(ABC):
+    """Define the interface for record management operations."""
     @abstractmethod
     def create_record(self, data: dict) -> None:
-        ...
+        """Create a new record from the supplied data."""
 
     @abstractmethod
     def delete_record(self, **criteria) -> bool:
-        ...
+        """Delete a record matching the supplied criteria."""
 
     @abstractmethod
     def update_record(self, data: dict, **criteria) -> bool:
-        ...
+        """Update a record matching the supplied criteria."""
 
     @abstractmethod
     def search_display_record(self, **criteria) -> dict | None:
-        ...
+        """Find and return a record matching the supplied criteria."""
 
 class ClientManagement(RecordManagement):
+    """Manage Client records using a shared record collection."""
     def __init__(self, collection: RecordCollection):
         self.collection = collection
 
@@ -176,6 +189,7 @@ class ClientManagement(RecordManagement):
         )
 
 class AirlineManagement(RecordManagement):
+    """Manage Airline records using a shared record collection."""
     def __init__(self, collection: RecordCollection):
         self.collection = collection
 
@@ -212,6 +226,7 @@ class AirlineManagement(RecordManagement):
         )
 
 class FlightManagement(RecordManagement):
+    """Manage Flight records using a shared record collection."""
     def __init__(self, collection: RecordCollection):
         self.collection = collection
 
@@ -265,7 +280,9 @@ class FlightManagement(RecordManagement):
             dataclasses.asdict(flight),
             client_id=client_id,
             airline_id=airline_id,
-            date=criteria["date"]
+            date=criteria["date"],
+            start_city=criteria["start_city"],
+            end_city=criteria["end_city"]
         )
 
     def search_display_record(self, **criteria) -> dict | None:
@@ -278,6 +295,7 @@ class FlightManagement(RecordManagement):
         )
 
 class RecordManager:
+    """Coordinate record operations across different record types."""
     def __init__(self, collection: RecordCollection):
         self.client_management = ClientManagement(collection)
         self.airline_management = AirlineManagement(collection)
@@ -293,17 +311,21 @@ class RecordManager:
         return managers[record_type]
 
     def create_record(self, record_type: RecordType, data: dict) -> None:
+        """Create a record using the manager for the specified record type."""
         manager = self._get_management(record_type)
         manager.create_record(data)
 
     def delete_record(self, record_type: RecordType, **criteria) -> bool:
+        """Delete a record using the manager for the specified record type."""
         manager = self._get_management(record_type)
         return manager.delete_record(**criteria)
 
     def update_record(self, record_type: RecordType, data: dict, **criteria) -> bool:
+        """Update a record using the manager for the specified record type."""
         manager = self._get_management(record_type)
         return manager.update_record(data, **criteria)
 
     def search_display_record(self, record_type: RecordType, **criteria) -> dict | None:
+        """Find a record using the manager for the specified record type."""
         manager = self._get_management(record_type)
         return manager.search_display_record(**criteria)
