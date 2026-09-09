@@ -1,12 +1,12 @@
 from dataclasses import fields
 from datetime import datetime
 
-from PyQt6.QtCore import QDate
+from PyQt6.QtCore import QDateTime
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QHBoxLayout,
     QComboBox,
-    QDateEdit,
+    QDateTimeEdit,
     QFormLayout,
     QGroupBox,
     QHeaderView,
@@ -191,9 +191,9 @@ class RecordGUI(QMainWindow):
 
             # Initiate QDateEdit (for date field) OR QLineEdit 
             if f.name == "date":
-                widget = QDateEdit()
+                widget = QDateTimeEdit()
                 widget.setCalendarPopup(True)          # Enables visual dropdown calendar
-                widget.setDate(QDate.currentDate())    # Default to current date
+                widget.setDateTime(QDateTime.currentDateTime())    # Default to current date
                 widget.setDisplayFormat("yyyy-MM-dd")  # Enforces YYYY-MM-DD format
             else:
                 widget = QLineEdit()
@@ -360,8 +360,8 @@ class RecordGUI(QMainWindow):
                 if field_name in ("record_type", "id"):
                     continue
 
-                if isinstance(widget, QDateEdit):
-                    widget.setDate(QDate.currentDate())
+                if isinstance(widget, QDateTimeEdit):
+                    widget.setDateTime(QDateTime.currentDateTime())
                 elif hasattr(widget, "clear"):
                     widget.clear()
 
@@ -484,11 +484,11 @@ class RecordGUI(QMainWindow):
                 item = self.table.item(row, col_idx)
                 cell_value = item.text() if item else ""
 
-                if isinstance(widget, QDateEdit):
-                    # Parse string date (e.g. "2026-09-08") into QDate
-                    qdate = QDate.fromString(cell_value, "yyyy-MM-dd")
+                if isinstance(widget, QDateTimeEdit):
+                    # Parse string date (e.g. "2026-09-08") into QDateTime
+                    qdate = QDateTime.fromString(cell_value, "yyyy-MM-dd HH:mm:ss")
                     if qdate.isValid():
-                        widget.setDate(qdate)
+                        widget.setDateTime(qdate)
                 elif isinstance(widget, QLineEdit):
                     widget.setText(cell_value)
 
@@ -498,8 +498,8 @@ class RecordGUI(QMainWindow):
                 if field_name == "record_type":
                     continue
 
-                if isinstance(widget, QDateEdit):
-                    record_data[field_name] = widget.date().toString("yyyy-MM-dd")
+                if isinstance(widget, QDateTimeEdit):
+                    record_data[field_name] = widget.dateTime().toString("yyyy-MM-dd HH:mm:ss")
                 elif isinstance(widget, QLineEdit):
                     val = widget.text().strip()
                     if val.isdigit() and "id" in field_name:
