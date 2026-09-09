@@ -64,6 +64,20 @@ class RecordCollection:
 
         return None
 
+    def search(
+            self,
+            field: str,
+            search_term: str,
+            record_type: str | None = None
+    ) -> list[dict]:
+        matches = []
+        for record in self.records:
+            if record_type is not None and record.get("record_type") != record_type:
+                continue
+            if str(record.get(field, "")).lower() == search_term.lower():
+                matches.append(record)
+        return matches
+
     def save(self) -> None:
         with open(self.file_path, "w", encoding="utf-8") as file:
             for record in self.records:
