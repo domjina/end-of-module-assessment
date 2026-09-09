@@ -392,7 +392,7 @@ class RecordGUI(QMainWindow):
 
             # Retrieve record identifier from column 0 (usually "id")
             id_item = self.table.item(selected_row, 0)
-            record_id_str = id_item.text() if id_item else ""
+            record_id_str = id_item.text().strip() if id_item else ""
 
             # Confirm before deletion (pop-up box)
             confirm = QMessageBox.question(
