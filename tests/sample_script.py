@@ -8,7 +8,6 @@ def main():
     record_manager = RecordManager(collection)
 
     client_data = {
-        "record_type": "VIP",
         "name": "John Smith",
         "address_line_1": "123",
         "address_line_2": "",
@@ -25,7 +24,6 @@ def main():
     print(collection.records)
 
     airline_data = {
-        "record_type": "boeing",
         "company_name": "boeing"
     }
 

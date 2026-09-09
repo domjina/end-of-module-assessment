@@ -349,18 +349,7 @@ class RecordGUI(QMainWindow):
             return
 
         active_fields, record_type = handler_map[current_form_index]
-
-        record_data = {}
-        for field_name, widget in active_fields.items():
-            if field_name == "id":
-                continue  # Skip ID field on creation
-            
-            if isinstance(widget, QDateEdit):
-                record_data[field_name] = widget.date().toString("yyyy-MM-dd")
-            elif isinstance(widget, QLineEdit):
-                val = widget.text().strip()
-                # Update ID reference fields (e.g., client_id, airline_id) to int
-                record_data[field_name] = int(val) if val.isdigit() and "id" in field_name else val
+        record_data = self._extract_data(active_fields)
 
         try:
             # Create record using manager call directly
@@ -447,18 +436,11 @@ class RecordGUI(QMainWindow):
                 2: (self.flight_fields, RecordType.FLIGHT),
             }
             active_fields, record_type = handler_map[current_form_index]
+            record_data = self._extract_data(active_fields)
 
             # Pull primary key ID from column 0 (if present)
             id_item = self.table.item(selected_row, 0)
             record_id_str = id_item.text() if id_item else ""
-
-            record_data = {}
-            for field_name, widget in active_fields.items():
-                if isinstance(widget, QDateEdit):
-                    record_data[field_name] = widget.date().toString("yyyy-MM-dd")
-                elif isinstance(widget, QLineEdit):
-                    val = widget.text().strip()
-                    record_data[field_name] = int(val) if val.isdigit() and "id" in field_name else val
 
             try:
                 record_id = int(record_id_str) if record_id_str.isdigit() else record_id_str
@@ -509,3 +491,20 @@ class RecordGUI(QMainWindow):
                         widget.setDate(qdate)
                 elif isinstance(widget, QLineEdit):
                     widget.setText(cell_value)
+
+    def _extract_data(self, active_fields: dict) -> dict:
+            record_data = {}
+            for field_name, widget in active_fields.items():
+                if field_name == "record_type":
+                    continue
+
+                if isinstance(widget, QDateEdit):
+                    record_data[field_name] = widget.date().toString("yyyy-MM-dd")
+                elif isinstance(widget, QLineEdit):
+                    val = widget.text().strip()
+                    if val.isdigit() and "id" in field_name:
+                        record_data[field_name] = int(val)
+                    else:
+                        record_data[field_name] = val
+
+            return record_data

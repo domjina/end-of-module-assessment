@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from src.record.record_types import RecordType
 
 @dataclass(frozen=True)
 class ClientRecord:
@@ -13,3 +14,7 @@ class ClientRecord:
     zip_code: str
     country: str
     phone_number: str
+
+    def __post_init__(self):
+        if self.record_type != RecordType.CLIENT.value:
+            raise ValueError("Client record_type must be 'client'")
