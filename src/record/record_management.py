@@ -122,6 +122,7 @@ class ClientManagement(RecordManagement):
         self.collection = collection
 
     def create_record(self, data: dict) -> None:
+        data.pop("record_type", None)
         next_id = self.collection.get_next_id(RecordType.CLIENT.value)
         client = ClientRecord(id=next_id, record_type=RecordType.CLIENT.value, **data)
         self.collection.add(dataclasses.asdict(client))
@@ -143,7 +144,8 @@ class ClientManagement(RecordManagement):
 
         return self.collection.update(
             dataclasses.asdict(client),
-            id=record_id
+            id=record_id,
+            record_type=RecordType.CLIENT.value
         )
 
     def search_display_record(self, **criteria) -> dict | None:
@@ -176,7 +178,8 @@ class AirlineManagement(RecordManagement):
         )
         return self.collection.update(
             dataclasses.asdict(airline),
-            id=record_id
+            id=record_id,
+            record_type=RecordType.AIRLINE.value
         )
 
     def search_display_record(self, **criteria) -> dict | None:
