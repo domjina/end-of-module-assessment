@@ -198,6 +198,16 @@ class FlightManagement(RecordManagement):
     def create_record(self, data: dict) -> None:
         client_id = data["client_id"]
         airline_id = data["airline_id"]
+        existing_flight = self.collection.find(
+            client_id=client_id,
+            airline_id=airline_id,
+            date=data["date"],
+            start_city=data["start_city"],
+            end_city=data["end_city"]
+        )
+        if existing_flight is not None:
+            raise ValueError("Flight already exists")
+
         client = self.collection.find(
             record_type=RecordType.CLIENT.value,
             id=client_id
@@ -217,7 +227,9 @@ class FlightManagement(RecordManagement):
         return self.collection.delete(
             client_id=criteria["client_id"],
             airline_id=criteria["airline_id"],
-            date=criteria["date"]
+            date=criteria["date"],
+            start_city=criteria["start_city"],
+            end_city=criteria["end_city"]
         )
 
     def update_record(self, data: dict, **criteria) -> bool:
@@ -237,12 +249,12 @@ class FlightManagement(RecordManagement):
         )
 
     def search_display_record(self, **criteria) -> dict | None:
-        client_id = criteria["client_id"]
-        airline_id = criteria["airline_id"]
         return self.collection.find(
-            client_id=client_id,
-            airline_id=airline_id,
-            date=criteria["date"]
+            client_id=criteria["client_id"],
+            airline_id=criteria["airline_id"],
+            date=criteria["date"],
+            start_city=criteria["start_city"],
+            end_city=criteria["end_city"]
         )
 
 class RecordManager:
