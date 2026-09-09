@@ -16,8 +16,18 @@ class RecordCollection:
     def get_next_id(self, record_type: str) -> int:
         max_id = 0
         for record in self.records:
-            if record.get("record_type") == record_type:
-                max_id = max(max_id, record["id"])
+            if record_type == RecordType.CLIENT.value:
+                if "id" in record and record.get("record_type") == record_type:
+                    max_id = max(max_id, record["id"])
+                if "client_id" in record:
+                    max_id = max(max_id, record["client_id"])
+
+            elif record_type == RecordType.AIRLINE.value:
+                if "id" in record and record.get("record_type") == record_type:
+                    max_id = max(max_id, record["id"])
+                if "airline_id" in record:
+                    max_id = max(max_id, record["airline_id"])
+
         return max_id + 1
 
     def add(self, record: dict) -> None:
