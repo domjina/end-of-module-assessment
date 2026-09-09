@@ -134,6 +134,7 @@ class ClientManagement(RecordManagement):
         )
 
     def update_record(self, data: dict, **criteria) -> bool:
+        data.pop("record_type", None)
         record_id = criteria["record_id"]
 
         client = ClientRecord(
@@ -159,6 +160,7 @@ class AirlineManagement(RecordManagement):
         self.collection = collection
 
     def create_record(self, data: dict) -> None:
+        data.pop("record_type", None)
         next_id = self.collection.get_next_id(RecordType.AIRLINE.value)
         airline = AirlineRecord(id=next_id, record_type=RecordType.AIRLINE.value, **data)
         self.collection.add(dataclasses.asdict(airline))
@@ -170,6 +172,7 @@ class AirlineManagement(RecordManagement):
         )
 
     def update_record(self, data: dict, **criteria) -> bool:
+        data.pop("record_type", None)
         record_id = criteria["record_id"]
         airline = AirlineRecord(
             id=record_id,
