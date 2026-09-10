@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from src.record.record_types import RecordType
+from record.record_types import RecordType
 
 @dataclass(frozen=True)
 class ClientRecord:
