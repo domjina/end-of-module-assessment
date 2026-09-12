@@ -11,6 +11,11 @@ from src.record.airline_record import AirlineRecord
 from src.record.flight_record import FlightRecord
 from src.record.record_types import RecordType
 from src.record.validation import ValidationError, validate_stored_record
+from src.record.validation import (
+    validate_client,
+    validate_airline,
+    validate_flight
+)
 
 class PersistenceError(Exception):
     """Raised when records cannot be loaded from / saved to the file system.
@@ -272,6 +277,8 @@ class ClientManagement(RecordManagement):
 
     def create_record(self, data: dict) -> None:
         data.pop("record_type", None)
+        validate_client(data)
+
         next_id = self.collection.get_next_id(RecordType.CLIENT.value)
         client = ClientRecord(id=next_id, record_type=RecordType.CLIENT.value, **data)
         self.collection.add(dataclasses.asdict(client))
@@ -284,6 +291,7 @@ class ClientManagement(RecordManagement):
 
     def update_record(self, data: dict, **criteria) -> bool:
         data.pop("record_type", None)
+        validate_client(data)
         record_id = criteria["record_id"]
 
         client = ClientRecord(
@@ -311,6 +319,7 @@ class AirlineManagement(RecordManagement):
 
     def create_record(self, data: dict) -> None:
         data.pop("record_type", None)
+        validate_airline(data)
         next_id = self.collection.get_next_id(RecordType.AIRLINE.value)
         airline = AirlineRecord(id=next_id, record_type=RecordType.AIRLINE.value, **data)
         self.collection.add(dataclasses.asdict(airline))
@@ -323,6 +332,7 @@ class AirlineManagement(RecordManagement):
 
     def update_record(self, data: dict, **criteria) -> bool:
         data.pop("record_type", None)
+        validate_airline(data)
         record_id = criteria["record_id"]
         airline = AirlineRecord(
             id=record_id,
@@ -347,6 +357,7 @@ class FlightManagement(RecordManagement):
         self.collection = collection
 
     def create_record(self, data: dict) -> None:
+        validate_flight(data)
         client_id = data["client_id"]
         airline_id = data["airline_id"]
         existing_flight = self.collection.find(
@@ -387,15 +398,53 @@ class FlightManagement(RecordManagement):
         client_id = criteria["client_id"]
         airline_id = criteria["airline_id"]
 
-        flight = FlightRecord(
-            client_id=client_id,
-            airline_id=airline_id,
+        proposed_flight = {
+            "client_id": client_id,
+            "airline_id": airline_id,
             **data
+        }
+
+        validate_flight(proposed_flight)
+
+        client = self.collection.find(
+            record_type=RecordType.CLIENT.value,
+            id=client_id
         )
+        airline = self.collection.find(
+            record_type=RecordType.AIRLINE.value,
+            id=airline_id
+        )
+
+        if client is None:
+            raise ValueError(f"Client ID {client_id} does not exist")
+        if airline is None:
+            raise ValueError(f"Airline ID {airline_id} does not exist")
+
+        duplicate = self.collection.find(
+            client_id=proposed_flight["client_id"],
+            airline_id=proposed_flight["airline_id"],
+            date=proposed_flight["date"],
+            start_city=proposed_flight["start_city"],
+            end_city=proposed_flight["end_city"]
+        )
+
+        current_flight = self.collection.find(
+            client_id=criteria["client_id"],
+            airline_id=criteria["airline_id"],
+            date=criteria["date"],
+            start_city=criteria["start_city"],
+            end_city=criteria["end_city"]
+        )
+
+        if duplicate is not None and duplicate is not current_flight:
+            raise ValueError("Flight already exists")
+
+        flight = FlightRecord(**proposed_flight)
+
         return self.collection.update(
             dataclasses.asdict(flight),
-            client_id=client_id,
-            airline_id=airline_id,
+            client_id=criteria["client_id"],
+            airline_id=criteria["airline_id"],
             date=criteria["date"],
             start_city=criteria["start_city"],
             end_city=criteria["end_city"]
