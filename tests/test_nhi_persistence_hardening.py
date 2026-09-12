@@ -213,10 +213,11 @@ class LoadHardening(unittest.TestCase):
         os.chmod(self.path, 0)
         self.addCleanup(os.chmod, self.path, stat.S_IRUSR | stat.S_IWUSR)
         try:
-            os.open(self.path, os.O_RDONLY)
+            fd = os.open(self.path, os.O_RDONLY)
         except PermissionError:
             pass
         else:  # pragma: no cover - filesystem ignores mode 0 (some CI)
+            os.close(fd)
             self.skipTest("filesystem does not enforce mode 0")
 
         with self.assertRaises(PersistenceError) as ctx:
@@ -231,10 +232,11 @@ class LoadHardening(unittest.TestCase):
         os.chmod(self.path, 0)
         self.addCleanup(os.chmod, self.path, stat.S_IRUSR | stat.S_IWUSR)
         try:
-            os.open(self.path, os.O_RDONLY)
+            fd = os.open(self.path, os.O_RDONLY)
         except PermissionError:
             pass
         else:  # pragma: no cover
+            os.close(fd)
             self.skipTest("filesystem does not enforce mode 0")
 
         with self.assertRaises(PersistenceError):
