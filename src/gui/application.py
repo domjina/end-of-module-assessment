@@ -20,15 +20,15 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from record.record_management import (
+from src.record.record_management import (
     RecordCollection,
     RecordManager
 )
 
-from record.airline_record import AirlineRecord
-from record.client_record import ClientRecord
-from record.flight_record import FlightRecord
-from record.record_types import RecordType
+from src.record.airline_record import AirlineRecord
+from src.record.client_record import ClientRecord
+from src.record.flight_record import FlightRecord
+from src.record.record_types import RecordType
 
 
 class RecordGUI(QMainWindow):
@@ -205,8 +205,8 @@ class RecordGUI(QMainWindow):
             if f.name == "date":
                 widget = QDateTimeEdit()
                 widget.setCalendarPopup(True)          # Enables visual dropdown calendar
+                widget.setDisplayFormat("yyyy-MM-dd HH:mm:ss")  # Enforces YYYY-MM-DD format
                 widget.setDateTime(QDateTime.currentDateTime())    # Default to current date
-                widget.setDisplayFormat("yyyy-MM-dd")  # Enforces YYYY-MM-DD format
             else:
                 widget = QLineEdit()
                 if placeholder:
@@ -645,7 +645,7 @@ class RecordGUI(QMainWindow):
                     continue
 
                 if isinstance(widget, QDateTimeEdit):
-                    record_data[field_name] = widget.dateTime().toString("yyyy-MM-dd HH:mm:ss")
+                    record_data[field_name] = widget.dateTime().toPyDateTime().replace(microsecond=0)
                 elif isinstance(widget, QLineEdit):
                     val = widget.text().strip()
                     if val.isdigit() and "id" in field_name:
