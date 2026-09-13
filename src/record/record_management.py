@@ -268,21 +268,26 @@ class FlightManagement(RecordManagement):
         )
 
     def update_record(self, data: dict, **criteria) -> bool:
-        client_id = criteria["client_id"]
-        airline_id = criteria["airline_id"]
+        #client_id = criteria["client_id"]
+        #airline_id = criteria["airline_id"]
+        payload = data.copy()
+
+        # Extract IDs from criteria or payload, popping them from payload so they aren't passed twice
+        client_id = criteria.get("client_id", payload.pop("client_id", None))
+        airline_id = criteria.get("airline_id", payload.pop("airline_id", None))
 
         flight = FlightRecord(
             client_id=client_id,
             airline_id=airline_id,
-            **data
+            **payload
         )
         return self.collection.update(
             dataclasses.asdict(flight),
             client_id=client_id,
             airline_id=airline_id,
-            date=criteria["date"],
-            start_city=criteria["start_city"],
-            end_city=criteria["end_city"]
+            date=criteria.get("date", payload.get("date")),
+            start_city=criteria.get("start_city", payload.get("start_city")),
+            end_city=criteria.get("end_city", payload.get("end_city"))
         )
 
     def search_display_record(self, **criteria) -> dict | None:
