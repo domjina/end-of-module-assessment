@@ -72,19 +72,42 @@ class RecordCollection:
         return None
 
     def search(
-            self,
-            field: str,
-            search_term: str,
-            record_type: str | None = None
-    ) -> list[dict]:
-        """Return all records whose specified field matches the search term."""
-        matches = []
-        for record in self.records:
-            if record_type is not None and record.get("record_type") != record_type:
-                continue
-            if str(record.get(field, "")).lower() == search_term.lower():
-                matches.append(record)
-        return matches
+                self,
+                field: str,
+                search_term: str,
+                record_type: str | None = None
+        ) -> list[dict]:
+            """Return all records whose specified field matches the search term exactly."""
+            matches = []
+            target_type = record_type.value if hasattr(record_type, "value") else str(record_type or "")
+
+            for record in self.records:
+                rec_type = str(record.get("record_type", "")).strip().lower()
+                target_clean = target_type.strip().lower()
+
+                # If searching for flights (where record_type is "" or "flight"), 
+                # allow records whose stored record_type is missing/empty OR explicitly "flight"
+                if target_clean in ("", "flight"):
+                    if rec_type not in ("", "none", "flight"):
+                        continue
+                else:
+                    if rec_type != target_clean:
+                        continue
+
+                # Extract & clean field value + search term
+                rec_val = str(record.get(field, "")).strip().lower()
+                term = str(search_term).strip().lower()
+
+                # Clean ISO / space date formats ("2026-09-13T00:00:00" -> "2026-09-13")
+                if field == "date":
+                    rec_val = rec_val.replace("t", " ").split()[0]
+                    term = term.replace("t", " ").split()[0]
+
+                # 3. Exact match only
+                if rec_val == term:
+                    matches.append(record)
+
+            return matches
 
     def save(self) -> None:
         """Save all records to the JSONL data file."""
@@ -181,13 +204,25 @@ class ClientManagement(RecordManagement):
             id=record_id,
             record_type=RecordType.CLIENT.value
         )
+    
+    def search_display_record(self, **criteria) -> list[dict] | dict | None:
+        client_id = criteria.get("record_id") or criteria.get("id") or criteria.get("client_id")
+        if client_id:
+            return self.collection.find(
+                record_type=RecordType.CLIENT.value,
+                id=client_id
+            )
+        if criteria:
+            field, search_term = next(iter(criteria.items()))
+            
+            return self.collection.search(
+                field=field,
+                search_term=str(search_term),
+                record_type=RecordType.CLIENT.value
+            )
 
-    def search_display_record(self, **criteria) -> dict | None:
-        return self.collection.find(
-            record_type=RecordType.CLIENT.value,
-            id=criteria["record_id"]
-        )
-
+        return []
+    
 class AirlineManagement(RecordManagement):
     """Manage Airline records using a shared record collection."""
     def __init__(self, collection: RecordCollection):
@@ -219,11 +254,23 @@ class AirlineManagement(RecordManagement):
             record_type=RecordType.AIRLINE.value
         )
 
-    def search_display_record(self, **criteria) -> dict | None:
-        return self.collection.find(
-            record_type=RecordType.AIRLINE.value,
-            id=criteria["record_id"]
-        )
+    def search_display_record(self, **criteria) -> list[dict] | dict | None:
+        client_id = criteria.get("record_id") or criteria.get("id") or criteria.get("client_id")
+        if client_id:
+            return self.collection.find(
+                record_type=RecordType.AIRLINE.value,
+                id=client_id
+            )
+        if criteria:
+            field, search_term = next(iter(criteria.items()))
+            
+            return self.collection.search(
+                field=field,
+                search_term=str(search_term),
+                record_type=RecordType.AIRLINE.value
+            )
+
+        return []
 
 class FlightManagement(RecordManagement):
     """Manage Flight records using a shared record collection."""
@@ -288,14 +335,33 @@ class FlightManagement(RecordManagement):
             end_city=criteria.get("end_city", payload.get("end_city"))
         )
 
-    def search_display_record(self, **criteria) -> dict | None:
-        return self.collection.find(
-            client_id=criteria["client_id"],
-            airline_id=criteria["airline_id"],
-            date=criteria["date"],
-            start_city=criteria["start_city"],
-            end_city=criteria["end_city"]
-        )
+    def search_display_record(self, **criteria) -> list[dict] | dict | None:
+            # 1. Single Flight ID lookup
+            flight_id = criteria.get("record_id") or criteria.get("id") or criteria.get("flight_id")
+            if flight_id:
+                return self.collection.find(
+                    record_type=RecordType.FLIGHT.value,
+                    id=flight_id
+                )
+
+            # 2. Filter out date if another text/ID field was populated in the GUI
+            non_date = {k: v for k, v in criteria.items() if k != "date" and str(v).strip() != ""}
+            active = non_date if non_date else {k: v for k, v in criteria.items() if str(v).strip() != ""}
+
+            if not active:
+                return []
+
+            # 3. Select active key (e.g. 'start_city')
+            field, raw_val = next(iter(active.items()))
+            search_term = str(raw_val).replace("T", " ").split()[0] if field == "date" else str(raw_val)
+
+            # 4. Route directly to collection.search
+            return self.collection.search(
+                field=field,
+                search_term=search_term,
+                record_type=RecordType.FLIGHT.value
+            )
+        
 
 class RecordManager:
     """Coordinate record operations across different record types."""
