@@ -6,12 +6,12 @@ import os
 import tempfile
 from datetime import datetime
 from pathlib import Path
-from record.client_record import ClientRecord
-from record.airline_record import AirlineRecord
-from record.flight_record import FlightRecord
-from record.record_types import RecordType
-from record.validation import ValidationError, validate_stored_record
-from record.validation import (
+from src.record.client_record import ClientRecord
+from src.record.airline_record import AirlineRecord
+from src.record.flight_record import FlightRecord
+from src.record.record_types import RecordType
+from src.record.validation import ValidationError, validate_stored_record
+from src.record.validation import (
     validate_client,
     validate_airline,
     validate_flight
@@ -504,7 +504,6 @@ class FlightManagement(RecordManagement):
         )
 
     def search_display_record(self, **criteria) -> list[dict] | dict | None:
-            # 1. Single Flight ID lookup
             flight_id = criteria.get("record_id") or criteria.get("id") or criteria.get("flight_id")
             if flight_id:
                 return self.collection.find(
@@ -512,18 +511,15 @@ class FlightManagement(RecordManagement):
                     id=flight_id
                 )
 
-            # 2. Filter out date if another text/ID field was populated in the GUI
             non_date = {k: v for k, v in criteria.items() if k != "date" and str(v).strip() != ""}
             active = non_date if non_date else {k: v for k, v in criteria.items() if str(v).strip() != ""}
 
             if not active:
                 return []
 
-            # 3. Select active key (e.g. 'start_city')
             field, raw_val = next(iter(active.items()))
             search_term = str(raw_val).replace("T", " ").split()[0] if field == "date" else str(raw_val)
 
-            # 4. Route directly to collection.search
             return self.collection.search(
                 field=field,
                 search_term=search_term,
