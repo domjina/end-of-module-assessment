@@ -6,12 +6,12 @@ import os
 import tempfile
 from datetime import datetime
 from pathlib import Path
-from src.record.client_record import ClientRecord
-from src.record.airline_record import AirlineRecord
-from src.record.flight_record import FlightRecord
-from src.record.record_types import RecordType
-from src.record.validation import ValidationError, validate_stored_record
-from src.record.validation import (
+from record.client_record import ClientRecord
+from record.airline_record import AirlineRecord
+from record.flight_record import FlightRecord
+from record.record_types import RecordType
+from record.validation import ValidationError, validate_stored_record
+from record.validation import (
     validate_client,
     validate_airline,
     validate_flight
@@ -498,9 +498,9 @@ class FlightManagement(RecordManagement):
             dataclasses.asdict(flight),
             client_id=client_id,
             airline_id=airline_id,
-            date=criteria.get("date", payload.get("date")),
-            start_city=criteria.get("start_city", payload.get("start_city")),
-            end_city=criteria.get("end_city", payload.get("end_city"))
+            date=criteria.get("date", data.get("date")),
+            start_city=criteria.get("start_city", data.get("start_city")),
+            end_city=criteria.get("end_city", data.get("end_city"))
         )
 
     def search_display_record(self, **criteria) -> list[dict] | dict | None:
