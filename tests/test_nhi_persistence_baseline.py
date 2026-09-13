@@ -25,6 +25,7 @@ from datetime import datetime
 
 from src.record.record_management import RecordCollection, RecordManager
 from src.record.record_types import RecordType
+from src.record.validation import ValidationError
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 REAL_DATA_FILE = os.path.join(REPO_ROOT, "src", "data", "records.jsonl")
@@ -214,8 +215,8 @@ class PersistenceBaseline(unittest.TestCase):
         col = self._new_collection()
         mgr = RecordManager(col)
         before = self._read_bytes()
-        # Current structural guard is the frozen dataclass constructor.
-        with self.assertRaises(TypeError):
+        # Validation rejects missing required fields before construction and saving.
+        with self.assertRaises(ValidationError):
             mgr.create_record(RecordType.CLIENT, {"record_type": "client", "name": "X"})
         self.assertEqual(col.records, [])
         self.assertEqual(self._read_bytes(), before, "rejected create must not write")
