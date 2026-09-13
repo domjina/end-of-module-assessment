@@ -20,15 +20,15 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from record.record_management import (
+from src.record.record_management import (
     RecordCollection,
     RecordManager
 )
 
-from record.airline_record import AirlineRecord
-from record.client_record import ClientRecord
-from record.flight_record import FlightRecord
-from record.record_types import RecordType
+from src.record.airline_record import AirlineRecord
+from src.record.client_record import ClientRecord
+from src.record.flight_record import FlightRecord
+from src.record.record_types import RecordType
 
 
 class RecordGUI(QMainWindow):

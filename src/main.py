@@ -2,8 +2,8 @@ import sys
 from PyQt6.QtWidgets import QApplication
 
 # Import your core architecture modules
-from record.record_management import RecordCollection
-from gui.application import RecordGUI
+from src.record.record_management import RecordCollection
+from src.gui.application import RecordGUI
 
 
 def main():
