@@ -398,6 +398,17 @@ class FlightManagement(RecordManagement):
         client_id = criteria["client_id"]
         airline_id = criteria["airline_id"]
 
+        current_flight = self.collection.find(
+            client_id=criteria["client_id"],
+            airline_id=criteria["airline_id"],
+            date=criteria["date"],
+            start_city=criteria["start_city"],
+            end_city=criteria["end_city"]
+        )
+
+        if current_flight is None:
+            return False
+
         proposed_flight = {
             "client_id": client_id,
             "airline_id": airline_id,
@@ -426,14 +437,6 @@ class FlightManagement(RecordManagement):
             date=proposed_flight["date"],
             start_city=proposed_flight["start_city"],
             end_city=proposed_flight["end_city"]
-        )
-
-        current_flight = self.collection.find(
-            client_id=criteria["client_id"],
-            airline_id=criteria["airline_id"],
-            date=criteria["date"],
-            start_city=criteria["start_city"],
-            end_city=criteria["end_city"]
         )
 
         if duplicate is not None and duplicate is not current_flight:
