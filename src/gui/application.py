@@ -1,5 +1,4 @@
 from dataclasses import fields
-from datetime import datetime
 
 from PyQt6.QtCore import QDateTime, Qt
 from PyQt6.QtWidgets import (
@@ -35,6 +34,7 @@ from record.record_types import RecordType
 class RecordGUI(QMainWindow):
 
     def __init__(self, collector: RecordCollection):
+        ''' Initialise the main canvas'''
         super().__init__() # initialise QMainWindow
 
         self.collector = collector # associate RecordCollection to self variable
@@ -230,15 +230,18 @@ class RecordGUI(QMainWindow):
         form_group_layout.addWidget(self.type_dropdown)
         form_group_layout.addLayout(self.stacked_layout)
 
+        self.search_button = QPushButton("Search")
         self.add_button = QPushButton("Add Record")
         self.update_button = QPushButton("Update Selected")
         self.delete_button = QPushButton("Delete Selected")
 
         # Connect EACH button to its respective handler
+        self.search_button.clicked.connect(self.on_search)
         self.add_button.clicked.connect(self.on_add)
         self.update_button.clicked.connect(self.on_update)
         self.delete_button.clicked.connect(self.on_delete)
 
+        form_group_layout.addWidget(self.search_button)
         form_group_layout.addWidget(self.add_button)
         form_group_layout.addWidget(self.update_button)
         form_group_layout.addWidget(self.delete_button)
@@ -251,9 +254,7 @@ class RecordGUI(QMainWindow):
         ############################################
         self.table = QTableWidget()
         self.table.setColumnCount(4)
-        self.table.setHorizontalHeaderLabels(
-            ["Client ID", "Name / Details", "Type"]
-        )
+
         self.table.horizontalHeader().setSectionResizeMode(
             QHeaderView.ResizeMode.Stretch
         )
@@ -272,7 +273,26 @@ class RecordGUI(QMainWindow):
     ############################################
     # Event Handlers [ add, delete, update ]
     ############################################ 
-    def refresh_table(self):
+
+    def clear_fields(self):
+        """Resets input widgets for the currently active form."""
+        current_form_index = self.type_dropdown.currentIndex()
+        handler_map = {
+            0: self.client_fields,
+            1: self.airline_fields,
+            2: self.flight_fields,
+        }
+        active_fields = handler_map.get(current_form_index, {})
+
+        for field_name, widget in active_fields.items():
+            if isinstance(widget, QLineEdit):
+                widget.clear()
+            elif isinstance(widget, QDateTimeEdit):
+                widget.setDateTime(QDateTime.currentDateTime())
+            elif isinstance(widget, QComboBox):
+                widget.setCurrentIndex(0)
+
+    def refresh_table(self, records=None):
         """Refreshes table columns and populates the latest records using collector.find()."""
         # Set active record type based on UI selection (e.g., combobox selection)
         current_index = self.type_dropdown.currentIndex()
@@ -298,34 +318,59 @@ class RecordGUI(QMainWindow):
         ]
         self.table.setHorizontalHeaderLabels(headers)
 
-        # Poll latest records via collector.find()
-        # Safely handle single dict, list of dicts, or None returns
-        raw_records = self.collector.records
+        # Determine source data (collector vs passed search records)
+        is_search_mode = records is not None
+        raw_source = records if is_search_mode else self.collector.records
 
-        if raw_records is None:
-            records = []
-        elif isinstance(raw_records, dict):
-            records = [raw_records]
+        # Safely handle single dict, list of dicts, or None returns
+        if raw_source is None:
+            raw_list = []
+        elif isinstance(raw_source, dict):
+            raw_list = [raw_source]
+        elif isinstance(raw_source, list):
+            raw_list = raw_source
         else:
-            records = raw_records
-        
+            raw_list = [raw_source]
+
+        # Filter by record type ONLY during standard tab switches
+        target_records = []
+        if not is_search_mode:
+            target_str = record_type.value.lower() if hasattr(record_type, "value") else str(record_type).lower()
+            
+            for rec in raw_list:
+                rec_dict = rec if isinstance(rec, dict) else getattr(rec, "__dict__", {})
+                rec_type = str(rec_dict.get("record_type", "")).strip().lower()
+
+                # Flight records lack a record_type key or have it empty/none
+                if target_str == "":
+                    if not rec_type or rec_type == "none":
+                        target_records.append(rec_dict)
+                else:
+                    if rec_type == target_str:
+                        target_records.append(rec_dict)
+        else:
+            target_records = [
+                rec if isinstance(rec, dict) else getattr(rec, "__dict__", {})
+                for rec in raw_list
+            ]
+
         # Clear existing table rows
+        self.table.blockSignals(True)
         self.table.setRowCount(0)
 
-        target_str = record_type.value.lower() if hasattr(record_type, "value") else str(record_type).lower()
-
-        records = [
-            rec for rec in records
-            if str(rec.get("record_type", "")).lower() == target_str
-        ]
-
         # Populate rows and cells
-        for record in records:
+        for record in target_records:
+            if not record:
+                continue
+
             row_position = self.table.rowCount()
             self.table.insertRow(row_position)
 
             for col_idx, field in enumerate(model_fields):
                 raw_val = record.get(field.name, "")
+
+                if raw_val == "" and field.name == "id":
+                    raw_val = record.get("record_id", record.get("client_id", record.get("airline_id", "")))
 
                 # If the value inside the dict is an Enum, extract its string value
                 val_str = raw_val.value if hasattr(raw_val, "value") else str(raw_val)
@@ -339,6 +384,8 @@ class RecordGUI(QMainWindow):
 
                 # Pass row_position (int) and col_idx (int)
                 self.table.setItem(row_position, col_idx, item)
+
+        self.table.blockSignals(False)
 
     def on_add(self):
         """Triggered when the user clicks the 'Add Record' button in the GUI."""
@@ -500,6 +547,53 @@ class RecordGUI(QMainWindow):
             except Exception as e:
                 QMessageBox.warning(self, "Update Error", f"Failed to update record:\n{e}")
 
+    def on_search(self):
+        """Triggered when the user clicks 'Search'. Searches active fields."""
+        current_index = self.type_dropdown.currentIndex()
+
+        handler_map = {
+            0: (self.client_fields, RecordType.CLIENT),
+            1: (self.airline_fields, RecordType.AIRLINE),
+            2: (self.flight_fields, RecordType.FLIGHT),
+        }
+
+        if current_index not in handler_map:
+            print("[DEBUG Search] Invalid tab index selected:", current_index)
+            return
+
+        active_fields, record_type = handler_map[current_index]
+
+        # Extract raw data from fields
+        extracted_data = self._extract_data(active_fields)
+
+        # Filter out empty criteria
+        search_criteria = {
+            key: val for key, val in extracted_data.items() 
+            if val != "" and val is not None
+        }
+
+        # --- DEBUG CHECK AROUND EMPTY CRITERIA ---
+        if not search_criteria:
+            self.refresh_table()
+            return
+
+        try:
+            #flight_records = [r for r in self.collector.records if str(r.get("record_type")).lower() == "flight"]
+            #print(f"[DEBUG Check] Total Flight Records in Collection: {len(flight_records)}")
+            #if flight_records:
+             #   print(f"[DEBUG Check] First Flight Record Dict: {flight_records[0]}")
+            #print("STORED RECORD:", self.collector.records[0] if self.collector.records else "NO RECORDS LOADED")
+            filtered_records = self.record_manager.search_display_record(
+                record_type=record_type,
+                **search_criteria
+            )
+            
+            # Display search results in table
+            self.refresh_table(filtered_records)
+
+        except Exception as e:
+            QMessageBox.warning(self, "Search Error", f"Failed to execute search:\n{e}")
+
     def on_table_row_clicked(self, row: int, column: int):
             """Populates form fields when a row in the QTableWidget is clicked."""
             current_index = self.type_dropdown.currentIndex()
@@ -547,21 +641,3 @@ class RecordGUI(QMainWindow):
                         record_data[field_name] = val
 
             return record_data
-
-    def clear_fields(self):
-        """Resets input widgets for the currently active form."""
-        current_form_index = self.type_dropdown.currentIndex()
-        handler_map = {
-            0: self.client_fields,
-            1: self.airline_fields,
-            2: self.flight_fields,
-        }
-        active_fields = handler_map.get(current_form_index, {})
-
-        for field_name, widget in active_fields.items():
-            if isinstance(widget, QLineEdit):
-                widget.clear()
-            elif isinstance(widget, QDateTimeEdit):
-                widget.setDateTime(QDateTime.currentDateTime())
-            elif isinstance(widget, QComboBox):
-                widget.setCurrentIndex(0)
