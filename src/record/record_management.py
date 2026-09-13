@@ -260,16 +260,14 @@ class FlightManagement(RecordManagement):
 
     def delete_record(self, **criteria) -> bool:
         return self.collection.delete(
-            client_id=criteria["client_id"],
-            airline_id=criteria["airline_id"],
-            date=criteria["date"],
-            start_city=criteria["start_city"],
-            end_city=criteria["end_city"]
+            client_id=criteria.get("client_id"),
+            airline_id=criteria.get("airline_id"),
+            date=criteria.get("date"),
+            start_city=criteria.get("start_city"),
+            end_city=criteria.get("end_city")
         )
 
     def update_record(self, data: dict, **criteria) -> bool:
-        #client_id = criteria["client_id"]
-        #airline_id = criteria["airline_id"]
         payload = data.copy()
 
         # Extract IDs from criteria or payload, popping them from payload so they aren't passed twice
