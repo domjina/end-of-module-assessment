@@ -242,7 +242,7 @@ class RecordGUI(QMainWindow):
         form_group_layout.addWidget(self.type_dropdown)
         form_group_layout.addLayout(self.stacked_layout)
 
-        self.search_button = QPushButton("Search")
+        self.search_button = QPushButton("Search (leave empty for all)")
         self.add_button = QPushButton("Add Record")
         self.update_button = QPushButton("Update Selected")
         self.delete_button = QPushButton("Delete Selected")
