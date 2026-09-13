@@ -2,11 +2,27 @@
 from abc import ABC, abstractmethod
 import dataclasses
 import json
+import os
+import tempfile
 from datetime import datetime
-from record.client_record import ClientRecord
-from record.airline_record import AirlineRecord
-from record.flight_record import FlightRecord
-from record.record_types import RecordType
+from pathlib import Path
+from src.record.client_record import ClientRecord
+from src.record.airline_record import AirlineRecord
+from src.record.flight_record import FlightRecord
+from src.record.record_types import RecordType
+from src.record.validation import ValidationError, validate_stored_record
+from src.record.validation import (
+    validate_client,
+    validate_airline,
+    validate_flight
+)
+
+class PersistenceError(Exception):
+    """Raised when records cannot be loaded from / saved to the file system.
+
+    Messages include the file path and, for a malformed line, its 1-based
+    physical line number so the stored file can be corrected.
+    """
 
 class RecordCollection:
     """Manage the shared collection of records and persistent storage."""
@@ -33,10 +49,24 @@ class RecordCollection:
 
         return max_id + 1
 
+    def _commit(self, mutate) -> None:
+        """Apply ``mutate()`` to ``self.records`` and persist the result.
+
+        If ``save()`` fails, ``self.records`` is restored to its exact
+        pre-operation contents and the ``PersistenceError`` is re-raised, so the
+        in-memory list and the file on disk never disagree.
+        """
+        snapshot = list(self.records)
+        mutate()
+        try:
+            self.save()
+        except PersistenceError:
+            self.records = snapshot
+            raise
+
     def add(self, record: dict) -> None:
         """Add a record to the collection and save the updated data."""
-        self.records.append(record)
-        self.save()
+        self._commit(lambda: self.records.append(record))
 
     def delete(self, record_type: str | None = None, **criteria) -> bool:
         """Delete the first record matching the supplied criteria."""
@@ -45,8 +75,7 @@ class RecordCollection:
                 continue
 
             if all(record.get(key) == value for key, value in criteria.items()):
-                del self.records[index]
-                self.save()
+                self._commit(lambda index=index: self.records.pop(index))
                 return True
         return False
 
@@ -54,8 +83,9 @@ class RecordCollection:
         """Replace the first record matching the supplied criteria."""
         for index, record in enumerate(self.records):
             if all(record.get(key) == value for key, value in criteria.items()):
-                self.records[index] = new_record
-                self.save()
+                self._commit(
+                    lambda index=index: self.records.__setitem__(index, new_record)
+                )
                 return True
 
         return False
@@ -110,29 +140,131 @@ class RecordCollection:
             return matches
 
     def save(self) -> None:
-        """Save all records to the JSONL data file."""
-        with open(self.file_path, "w", encoding="utf-8") as file:
-            for record in self.records:
-                json.dump(
-                    record,
-                    file,
-                    default=self._json_serializer
-                )
-                file.write("\n")
+        """Write ``self.records`` to ``self.file_path`` atomically.
+
+        The records are serialised up front, written to a temporary file in the
+        destination directory and closed, and only then moved into place with
+        ``os.replace``. If serialisation, writing or the replacement fails, the
+        previous destination file is left untouched, the temporary file is
+        removed (without hiding the original error), and a ``PersistenceError``
+        naming the destination and the failed operation is raised.
+        """
+        destination = self.file_path
+        directory = Path(destination).parent
+
+        try:
+            directory.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            raise PersistenceError(
+                f"cannot save {destination}: creating its directory failed: {exc}"
+            ) from exc
+
+        try:
+            payload = "".join(
+                json.dumps(record, default=self._json_serializer) + "\n"
+                for record in self.records
+            )
+        except TypeError as exc:
+            raise PersistenceError(
+                f"cannot save {destination}: serialising the records failed: {exc}"
+            ) from exc
+
+        try:
+            handle, temp_path = tempfile.mkstemp(
+                dir=directory,
+                prefix=Path(destination).name + ".",
+                suffix=".tmp",
+            )
+        except OSError as exc:
+            raise PersistenceError(
+                f"cannot save {destination}: creating a temporary file failed: {exc}"
+            ) from exc
+        os.close(handle)
+
+        try:
+            try:
+                with open(temp_path, "w", encoding="utf-8") as temp_file:
+                    temp_file.write(payload)
+            except OSError as exc:
+                raise PersistenceError(
+                    f"cannot save {destination}: writing the temporary file failed: {exc}"
+                ) from exc
+
+            try:
+                os.replace(temp_path, destination)
+            except OSError as exc:
+                raise PersistenceError(
+                    f"cannot save {destination}: replacing the destination file failed: {exc}"
+                ) from exc
+        finally:
+            if os.path.exists(temp_path):
+                try:
+                    os.remove(temp_path)
+                except OSError:
+                    pass
 
     def load(self) -> None:
-        """Load the records from the JSONL data file."""
+        """Load records from ``self.file_path`` into ``self.records``.
+
+        The whole file is parsed into a temporary list first; ``self.records``
+        is replaced only once every non-blank line has been read as a JSON
+        object with a parseable ``date`` (when present) and a recognised record
+        structure. On any failure a ``PersistenceError`` naming the file and the
+        1-based physical line is raised and both the file on disk and the
+        current in-memory list are left unchanged. A missing file is treated as
+        an empty store and created.
+        """
         try:
-            with open(self.file_path, "r", encoding="utf-8") as file:
-                self.records = [
-                    json.loads(line)
-                    for line in file
-                    if line.strip()
-                ]
-            self._convert_types()
+            Path(self.file_path).parent.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            raise PersistenceError(
+                f"cannot create storage directory for {self.file_path}: {exc}"
+            ) from exc
+
+        try:
+            file = open(self.file_path, "r", encoding="utf-8")
         except FileNotFoundError:
             self.records = []
             self.save()
+            return
+        except OSError as exc:
+            raise PersistenceError(
+                f"cannot read {self.file_path}: {exc}"
+            ) from exc
+
+        parsed: list[dict] = []
+        with file:
+            for line_number, line in enumerate(file, start=1):
+                if not line.strip():
+                    continue
+                try:
+                    record = json.loads(line)
+                except json.JSONDecodeError as exc:
+                    raise PersistenceError(
+                        f"{self.file_path}:{line_number}: invalid JSON: {exc.msg}"
+                    ) from exc
+                if not isinstance(record, dict):
+                    raise PersistenceError(
+                        f"{self.file_path}:{line_number}: expected a JSON object, "
+                        f"got {type(record).__name__}"
+                    )
+                if isinstance(record.get("date"), str):
+                    try:
+                        record["date"] = datetime.fromisoformat(record["date"])
+                    except ValueError as exc:
+                        raise PersistenceError(
+                            f"{self.file_path}:{line_number}: invalid date "
+                            f"{record['date']!r}"
+                        ) from exc
+                try:
+                    validate_stored_record(record)
+                except ValidationError as exc:
+                    raise PersistenceError(
+                        f"{self.file_path}:{line_number}: {exc}"
+                    ) from exc
+                parsed.append(record)
+
+        self.records = parsed
 
     @staticmethod
     def _json_serializer(value):
@@ -142,17 +274,6 @@ class RecordCollection:
         raise TypeError(
             f"Object of type {type(value).__name__} is not JSON serializable"
         )
-
-    def _convert_types(self) -> None:
-        for record in self.records:
-            if "date" in record and isinstance(record["date"], str):
-                record["date"] = datetime.fromisoformat(record["date"])
-            if "id" in record:
-                record["id"] = int(record["id"])
-            if "client_id" in record:
-                record["client_id"] = int(record["client_id"])
-            if "airline_id" in record:
-                record["airline_id"] = int(record["airline_id"])
 
 class RecordManagement(ABC):
     """Define the interface for record management operations."""
@@ -179,6 +300,8 @@ class ClientManagement(RecordManagement):
 
     def create_record(self, data: dict) -> None:
         data.pop("record_type", None)
+        validate_client(data)
+
         next_id = self.collection.get_next_id(RecordType.CLIENT.value)
         client = ClientRecord(id=next_id, record_type=RecordType.CLIENT.value, **data)
         self.collection.add(dataclasses.asdict(client))
@@ -191,6 +314,7 @@ class ClientManagement(RecordManagement):
 
     def update_record(self, data: dict, **criteria) -> bool:
         data.pop("record_type", None)
+        validate_client(data)
         record_id = criteria["record_id"]
 
         client = ClientRecord(
@@ -230,6 +354,7 @@ class AirlineManagement(RecordManagement):
 
     def create_record(self, data: dict) -> None:
         data.pop("record_type", None)
+        validate_airline(data)
         next_id = self.collection.get_next_id(RecordType.AIRLINE.value)
         airline = AirlineRecord(id=next_id, record_type=RecordType.AIRLINE.value, **data)
         self.collection.add(dataclasses.asdict(airline))
@@ -242,6 +367,7 @@ class AirlineManagement(RecordManagement):
 
     def update_record(self, data: dict, **criteria) -> bool:
         data.pop("record_type", None)
+        validate_airline(data)
         record_id = criteria["record_id"]
         airline = AirlineRecord(
             id=record_id,
@@ -278,6 +404,7 @@ class FlightManagement(RecordManagement):
         self.collection = collection
 
     def create_record(self, data: dict) -> None:
+        validate_flight(data)
         client_id = data["client_id"]
         airline_id = data["airline_id"]
         existing_flight = self.collection.find(
@@ -321,11 +448,52 @@ class FlightManagement(RecordManagement):
         client_id = criteria.get("client_id", payload.pop("client_id", None))
         airline_id = criteria.get("airline_id", payload.pop("airline_id", None))
 
-        flight = FlightRecord(
-            client_id=client_id,
-            airline_id=airline_id,
-            **payload
+        current_flight = self.collection.find(
+            client_id=criteria["client_id"],
+            airline_id=criteria["airline_id"],
+            date=criteria["date"],
+            start_city=criteria["start_city"],
+            end_city=criteria["end_city"]
         )
+
+        if current_flight is None:
+            return False
+
+        proposed_flight = {
+            "client_id": client_id,
+            "airline_id": airline_id,
+            **data
+        }
+
+        validate_flight(proposed_flight)
+
+        client = self.collection.find(
+            record_type=RecordType.CLIENT.value,
+            id=client_id
+        )
+        airline = self.collection.find(
+            record_type=RecordType.AIRLINE.value,
+            id=airline_id
+        )
+
+        if client is None:
+            raise ValueError(f"Client ID {client_id} does not exist")
+        if airline is None:
+            raise ValueError(f"Airline ID {airline_id} does not exist")
+
+        duplicate = self.collection.find(
+            client_id=proposed_flight["client_id"],
+            airline_id=proposed_flight["airline_id"],
+            date=proposed_flight["date"],
+            start_city=proposed_flight["start_city"],
+            end_city=proposed_flight["end_city"]
+        )
+
+        if duplicate is not None and duplicate is not current_flight:
+            raise ValueError("Flight already exists")
+
+        flight = FlightRecord(**proposed_flight)
+
         return self.collection.update(
             dataclasses.asdict(flight),
             client_id=client_id,
