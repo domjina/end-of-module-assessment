@@ -56,7 +56,7 @@ class RecordGUI(QMainWindow):
         main_layout = QVBoxLayout(main_widget)
 
         # Secondary canvas /  form group ---
-        form_group = QGroupBox("Add New Record")
+        form_group = QGroupBox("")
         form_group_layout = QVBoxLayout()
 
         # Drop-Down Menu
@@ -376,6 +376,7 @@ class RecordGUI(QMainWindow):
                 active_fields["record_type"].setText(str(default_val))
 
             self.refresh_table()
+            self.clear_fields()
 
         except Exception as e:
             QMessageBox.warning(self, "Invalid Record Data", f"Failed to create record:\n{e}")
@@ -436,6 +437,7 @@ class RecordGUI(QMainWindow):
 
                 if success:
                     self.refresh_table()
+                    self.clear_fields()
                 else:
                     QMessageBox.warning(self, "Delete Failed", "Record could not be found or deleted.")
 
@@ -491,6 +493,7 @@ class RecordGUI(QMainWindow):
 
                 if success:
                     self.refresh_table()
+                    self.clear_fields()
                 else:
                     QMessageBox.warning(self, "Update Failed", "Record could not be updated.")
 
@@ -544,3 +547,21 @@ class RecordGUI(QMainWindow):
                         record_data[field_name] = val
 
             return record_data
+
+    def clear_fields(self):
+        """Resets input widgets for the currently active form."""
+        current_form_index = self.type_dropdown.currentIndex()
+        handler_map = {
+            0: self.client_fields,
+            1: self.airline_fields,
+            2: self.flight_fields,
+        }
+        active_fields = handler_map.get(current_form_index, {})
+
+        for field_name, widget in active_fields.items():
+            if isinstance(widget, QLineEdit):
+                widget.clear()
+            elif isinstance(widget, QDateTimeEdit):
+                widget.setDateTime(QDateTime.currentDateTime())
+            elif isinstance(widget, QComboBox):
+                widget.setCurrentIndex(0)
