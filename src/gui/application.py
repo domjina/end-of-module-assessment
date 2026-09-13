@@ -413,6 +413,21 @@ class RecordGUI(QMainWindow):
                 # Parse record_id as integer if present
                 record_id = int(record_id_str) if record_id_str.isdigit() else record_id_str
 
+                # Handle FLIGHT with composite criteria
+                if record_type == RecordType.FLIGHT:
+                        # Retrieve original raw record dict attached to column 0
+                        original_data = id_item.data(Qt.ItemDataRole.UserRole)
+
+                        success = self.record_manager.delete_record(
+                        record_type=record_type,
+                        row_index=selected_row,
+                        client_id=original_data.get("client_id"),
+                        airline_id=original_data.get("airline_id"),
+                        date=original_data.get("date"),
+                        start_city=original_data.get("start_city"),
+                        end_city=original_data.get("end_city")
+                        )
+
                 success = self.record_manager.delete_record(
                     record_type=record_type,
                     record_id=record_id,
