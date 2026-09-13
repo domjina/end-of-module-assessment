@@ -68,7 +68,6 @@ class RecordGUI(QMainWindow):
         self.type_dropdown.currentIndexChanged.connect(self.refresh_table)
         
 
-
         ## Combine all 3 forms into a single form ##
         self.stacked_layout = QStackedLayout()
 
@@ -267,7 +266,7 @@ class RecordGUI(QMainWindow):
 
         main_layout.addWidget(self.table)
         self.table.cellClicked.connect(self.on_table_row_clicked)
-        self.refresh_table()
+        #self.refresh_table()
 
 
     ############################################
@@ -293,7 +292,7 @@ class RecordGUI(QMainWindow):
                 widget.setCurrentIndex(0)
 
     def refresh_table(self, records=None):
-        """Refreshes table columns and populates the latest records using collector.find()."""
+        """Refreshes table columns and populates the latest records using collector.find() & collector.search()."""
         # Set active record type based on UI selection (e.g., combobox selection)
         current_index = self.type_dropdown.currentIndex()
 
@@ -353,6 +352,7 @@ class RecordGUI(QMainWindow):
                 rec if isinstance(rec, dict) else getattr(rec, "__dict__", {})
                 for rec in raw_list
             ]
+
 
         # Clear existing table rows
         self.table.blockSignals(True)
@@ -578,11 +578,7 @@ class RecordGUI(QMainWindow):
             return
 
         try:
-            #flight_records = [r for r in self.collector.records if str(r.get("record_type")).lower() == "flight"]
-            #print(f"[DEBUG Check] Total Flight Records in Collection: {len(flight_records)}")
-            #if flight_records:
-             #   print(f"[DEBUG Check] First Flight Record Dict: {flight_records[0]}")
-            #print("STORED RECORD:", self.collector.records[0] if self.collector.records else "NO RECORDS LOADED")
+
             filtered_records = self.record_manager.search_display_record(
                 record_type=record_type,
                 **search_criteria
