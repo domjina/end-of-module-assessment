@@ -1,7 +1,7 @@
 from dataclasses import fields
 from datetime import datetime
 
-from PyQt6.QtCore import QDateTime
+from PyQt6.QtCore import QDateTime, Qt
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QHBoxLayout,
@@ -332,6 +332,11 @@ class RecordGUI(QMainWindow):
 
                 # QTableWidgetItem MUST be instantiated with a string
                 item = QTableWidgetItem(val_str)
+
+                # Attach the untouched original record dictionary to Column 0
+                if col_idx == 0:
+                    item.setData(Qt.ItemDataRole.UserRole, record)
+
                 # Pass row_position (int) and col_idx (int)
                 self.table.setItem(row_position, col_idx, item)
 
@@ -445,13 +450,29 @@ class RecordGUI(QMainWindow):
             try:
                 record_id = int(record_id_str) if record_id_str.isdigit() else record_id_str
 
-                # Update directly through RecordManager
-                success = self.record_manager.update_record(
-                    record_type=record_type,
-                    data=record_data,
-                    record_id=record_id,
-                    row_index=selected_row
-                )
+                # Handle FLIGHT with composite criteria
+                if record_type == RecordType.FLIGHT:
+                        # Retrieve original raw record dict attached to column 0
+                        original_data = id_item.data(Qt.ItemDataRole.UserRole)
+
+                        success = self.record_manager.update_record(
+                            record_type=record_type,
+                            data=record_data,
+                            row_index=selected_row,
+                            client_id=original_data.get("client_id"),
+                            airline_id=original_data.get("airline_id"),
+                            date=original_data.get("date"),
+                            start_city=original_data.get("start_city"),
+                            end_city=original_data.get("end_city")
+                        )
+                else:
+                    # Update directly through RecordManager
+                    success = self.record_manager.update_record(
+                        record_type=record_type,
+                        data=record_data,
+                        record_id=record_id,
+                        row_index=selected_row
+                    )
 
                 if success:
                     self.refresh_table()
