@@ -59,6 +59,19 @@ class RecordGUI(QMainWindow):
         form_group = QGroupBox("")
         form_group_layout = QVBoxLayout()
 
+        ### Clear fields button
+        top_left_layout = QHBoxLayout()
+        top_left_layout.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        top_left_layout.setContentsMargins(0, 0, 0, 0)
+        self.clear_button = QPushButton("Clear Fields")
+        self.clear_button.setFixedWidth(85)
+        self.clear_button.setFixedHeight(32)
+        self.clear_button.clicked.connect(self.clear_fields)
+        top_left_layout.addWidget(self.clear_button)
+        top_left_layout.addStretch()
+        form_group_layout.addLayout(top_left_layout)
+        form_group.setLayout(form_group_layout)
+
         # Drop-Down Menu
         # Set drop-down label names
         self.type_dropdown = QComboBox()
@@ -274,22 +287,26 @@ class RecordGUI(QMainWindow):
     ############################################ 
 
     def clear_fields(self):
-        """Resets input widgets for the currently active form."""
-        current_form_index = self.type_dropdown.currentIndex()
-        handler_map = {
-            0: self.client_fields,
-            1: self.airline_fields,
-            2: self.flight_fields,
-        }
-        active_fields = handler_map.get(current_form_index, {})
+            """Resets input widgets for the currently active form, preserving record_type."""
+            current_form_index = self.type_dropdown.currentIndex()
+            handler_map = {
+                0: self.client_fields,
+                1: self.airline_fields,
+                2: self.flight_fields,
+            }
+            active_fields = handler_map.get(current_form_index, {})
 
-        for field_name, widget in active_fields.items():
-            if isinstance(widget, QLineEdit):
-                widget.clear()
-            elif isinstance(widget, QDateTimeEdit):
-                widget.setDateTime(QDateTime.currentDateTime())
-            elif isinstance(widget, QComboBox):
-                widget.setCurrentIndex(0)
+            for field_name, widget in active_fields.items():
+                # Skip clearing the record_type field or the dropdown widget itself
+                if field_name == "record_type" or widget == self.type_dropdown:
+                    continue
+
+                if isinstance(widget, QLineEdit):
+                    widget.clear()
+                elif isinstance(widget, QDateTimeEdit):
+                    widget.setDateTime(QDateTime.currentDateTime())
+                elif isinstance(widget, QComboBox):
+                    widget.setCurrentIndex(0)
 
     def refresh_table(self, records=None):
         """Refreshes table columns and populates the latest records using collector.find() & collector.search()."""
