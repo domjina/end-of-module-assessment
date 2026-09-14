@@ -455,12 +455,23 @@ class FlightManagement(RecordManagement):
         self.collection.add(dataclasses.asdict(flight))
 
     def delete_record(self, **criteria) -> bool:
+        required_fields = (
+            "client_id",
+            "airline_id",
+            "date",
+            "start_city",
+            "end_city"
+        )
+
+        if any(criteria.get(field) is None for field in required_fields):
+            return False
+
         return self.collection.delete(
-            client_id=criteria.get("client_id"),
-            airline_id=criteria.get("airline_id"),
-            date=criteria.get("date"),
-            start_city=criteria.get("start_city"),
-            end_city=criteria.get("end_city")
+            client_id=criteria["client_id"],
+            airline_id=criteria["airline_id"],
+            date=criteria["date"],
+            start_city=criteria["start_city"],
+            end_city=criteria["end_city"]
         )
 
     def update_record(self, data: dict, **criteria) -> bool:
