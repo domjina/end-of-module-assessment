@@ -10,7 +10,11 @@ from src.record.client_record import ClientRecord
 from src.record.airline_record import AirlineRecord
 from src.record.flight_record import FlightRecord
 from src.record.record_types import RecordType
-from src.record.validation import ValidationError, validate_stored_record
+from src.record.validation import (
+    ValidationError,
+    validate_stored_record,
+    resolve_stored_record_type,
+)
 from src.record.validation import (
     validate_client,
     validate_airline,
@@ -258,10 +262,13 @@ class RecordCollection:
                         ) from exc
                 try:
                     validate_stored_record(record)
+                    canonical_type = resolve_stored_record_type(record)
                 except ValidationError as exc:
                     raise PersistenceError(
                         f"{self.file_path}:{line_number}: {exc}"
                     ) from exc
+                if canonical_type is not None:
+                    record["record_type"] = canonical_type
                 parsed.append(record)
 
         self.records = parsed

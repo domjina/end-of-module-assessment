@@ -221,3 +221,69 @@ def validate_stored_record(record: dict) -> None:
         )
     for field_name, check in spec.items():
         check(field_name, record[field_name])
+
+
+_STORED_KIND_TO_RECORD_TYPE = {
+    "Client": "client",
+    "Airline": "airline",
+}
+
+
+def canonical_stored_record_type(record: dict) -> str | None:
+    """Return the canonical ``record_type`` for a structurally valid stored Client
+    or Airline record, or ``None`` for a Flight (Flight carries no ``record_type``
+    field anywhere in its schema, dataclass or consumers, and must not gain one).
+
+    Only call this after ``validate_stored_record(record)`` has raised nothing,
+    so the shape is already known to match exactly one kind. Reads only the
+    record's structure, never its ``record_type`` value.
+    """
+    keys = set(record)
+    if "name" in keys:
+        kind = "Client"
+    elif "company_name" in keys:
+        kind = "Airline"
+    else:
+        return None
+    return _STORED_KIND_TO_RECORD_TYPE[kind]
+
+
+def resolve_stored_record_type(record: dict) -> str | None:
+    """Decide what, if anything, a stored row's ``record_type`` should become.
+
+    Reuses ``canonical_stored_record_type`` for the structural kind, then
+    applies compatibility evidence about the row's *own* ``record_type`` key:
+
+    * Flight (``canonical_stored_record_type`` is ``None``): never inspected,
+      never assigned. Returns ``None`` (no change).
+    * Client/Airline, key absent entirely: the only case with existing,
+      committed evidence for auto-correction (``validate_stored_record``
+      itself deliberately treats a missing ``record_type`` as loadable --
+      see ``_STORED_OPTIONAL_KEYS`` and
+      ``test_valid_stored_rows_including_no_record_type_load``). Returns the
+      inferred canonical value for the caller to insert.
+    * Client/Airline, key present and already equal to the canonical value:
+      returns ``None`` (no change) -- an explicitly correct value is left
+      untouched, never rewritten.
+    * Client/Airline, key present with any other value -- unknown, mismatched
+      with the other kind's canonical value, ``None``, or blank/whitespace --
+      raises ``ValidationError``. There is no committed test or documented
+      contract instructing this module to silently overwrite a
+      *present*-but-wrong value (``test_kind_is_identified_without_record_type``
+      only establishes that ``validate_stored_record`` does not itself inspect
+      that value -- it says nothing about what a caller may safely infer from
+      it), so an incompatible present value is treated as corrupt/incompatible
+      stored data and rejected rather than guessed at.
+    """
+    canonical = canonical_stored_record_type(record)
+    if canonical is None:
+        return None
+    if "record_type" not in record:
+        return canonical
+    stored_value = record["record_type"]
+    if stored_value == canonical:
+        return None
+    raise ValidationError(
+        f"record_type: incompatible value {stored_value!r} for this record "
+        f"(expected {canonical!r})"
+    )

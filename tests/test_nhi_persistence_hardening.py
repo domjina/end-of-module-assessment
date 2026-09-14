@@ -38,7 +38,8 @@ import unittest
 from datetime import datetime
 from unittest.mock import mock_open, patch
 
-from src.record.record_management import PersistenceError, RecordCollection
+from src.record.record_management import PersistenceError, RecordCollection, RecordManager
+from src.record.record_types import RecordType
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 REAL_DATA_FILE = os.path.join(REPO_ROOT, "src", "data", "records.jsonl")
@@ -248,6 +249,169 @@ class LoadHardening(unittest.TestCase):
         self._write_rows([client_without_type, AIRLINE_ROW, FLIGHT_ROW])
         col = RecordCollection(self.path)
         self.assertEqual(len(col.records), 3)
+
+    # ---- stored record_type canonicalisation -----------------------------
+    # Reproduces and guards Emma's confirmed scenario: a structurally valid
+    # Client JSONL row with no ``record_type`` loaded, was invisible to
+    # Search, and did not reserve its ID for ``get_next_id``.
+    def test_missing_record_type_is_canonicalised_and_becomes_visible(self) -> None:
+        client_without_type = {k: v for k, v in CLIENT_ROW.items() if k != "record_type"}
+        self._write_rows([client_without_type])
+        col = RecordCollection(self.path)
+        mgr = RecordManager(col)
+
+        self.assertEqual(col.records[0]["record_type"], "client")
+        found = mgr.search_display_record(RecordType.CLIENT, name=CLIENT_ROW["name"])
+        self.assertEqual(len(found), 1)
+        self.assertEqual(found[0]["id"], CLIENT_ROW["id"])
+
+    def test_no_id_reuse_after_canonicalising_a_legacy_client_row(self) -> None:
+        client_without_type = {k: v for k, v in CLIENT_ROW.items() if k != "record_type"}
+        self._write_rows([client_without_type])
+        col = RecordCollection(self.path)
+        mgr = RecordManager(col)
+
+        self.assertEqual(col.get_next_id(RecordType.CLIENT.value), CLIENT_ROW["id"] + 1)
+        mgr.create_record(
+            RecordType.CLIENT,
+            {k: v for k, v in CLIENT_ROW.items() if k not in ("id", "record_type")},
+        )
+        ids = [r["id"] for r in col.records if r.get("record_type") == "client"]
+        self.assertEqual(sorted(ids), [CLIENT_ROW["id"], CLIENT_ROW["id"] + 1])
+
+    def test_missing_airline_record_type_is_canonicalised_and_reserves_id(self) -> None:
+        airline_without_type = {k: v for k, v in AIRLINE_ROW.items() if k != "record_type"}
+        self._write_rows([airline_without_type])
+        col = RecordCollection(self.path)
+        mgr = RecordManager(col)
+
+        self.assertEqual(col.records[0]["record_type"], "airline")
+        found = mgr.search_display_record(
+            RecordType.AIRLINE, company_name=AIRLINE_ROW["company_name"]
+        )
+        self.assertEqual(len(found), 1)
+        self.assertEqual(col.get_next_id(RecordType.AIRLINE.value), AIRLINE_ROW["id"] + 1)
+
+    def test_present_correct_record_type_is_preserved_unchanged(self) -> None:
+        # CLIENT_ROW / AIRLINE_ROW already carry their correct canonical value;
+        # an explicitly correct value must never be rewritten or re-derived.
+        self._write_rows([CLIENT_ROW, AIRLINE_ROW])
+        col = RecordCollection(self.path)
+        self.assertEqual(col.records[0], CLIENT_ROW)
+        self.assertEqual(col.records[1], AIRLINE_ROW)
+
+    def test_unknown_stored_record_type_is_rejected_atomically(self) -> None:
+        # A value with no meaning in this system (not the row's own canonical
+        # value, not the other kind's) is incompatible stored data, not a gap
+        # to silently fill in -- reject rather than guess.
+        weird = {**CLIENT_ROW, "record_type": "vip"}
+        self._write_rows([weird])
+        before = self._bytes()
+        with self.assertRaises(PersistenceError) as ctx:
+            RecordCollection(self.path)
+        self.assertIn("record_type", str(ctx.exception))
+        self.assertIn("incompatible", str(ctx.exception))
+        self.assertEqual(self._bytes(), before)
+
+    def test_mismatched_stored_record_type_is_rejected_atomically(self) -> None:
+        # A Client-shaped row explicitly tagged with the *other* kind's
+        # canonical value is not "missing" -- it is present and wrong.
+        mismatched = {**CLIENT_ROW, "record_type": "airline"}
+        self._write_rows([mismatched])
+        before = self._bytes()
+        with self.assertRaises(PersistenceError) as ctx:
+            RecordCollection(self.path)
+        self.assertIn("record_type", str(ctx.exception))
+        self.assertEqual(self._bytes(), before)
+
+    def test_null_stored_record_type_is_rejected_atomically(self) -> None:
+        null_typed = {**CLIENT_ROW, "record_type": None}
+        self._write_rows([null_typed])
+        before = self._bytes()
+        with self.assertRaises(PersistenceError) as ctx:
+            RecordCollection(self.path)
+        self.assertIn("record_type", str(ctx.exception))
+        self.assertEqual(self._bytes(), before)
+
+    def test_blank_stored_record_type_is_rejected_atomically(self) -> None:
+        # Blank is a *present* value, not an absent key -- the row explicitly
+        # carries "", it did not omit record_type, so it takes the reject
+        # branch rather than the missing-key inference branch.
+        blank_typed = {**CLIENT_ROW, "record_type": ""}
+        self._write_rows([blank_typed])
+        before = self._bytes()
+        with self.assertRaises(PersistenceError) as ctx:
+            RecordCollection(self.path)
+        self.assertIn("record_type", str(ctx.exception))
+        self.assertEqual(self._bytes(), before)
+
+    def test_whitespace_stored_record_type_is_rejected_atomically(self) -> None:
+        # Whitespace-only is also a *present* value distinct from "" and from
+        # an absent key; it must not be treated as equivalent to missing.
+        whitespace_typed = {**CLIENT_ROW, "record_type": "   "}
+        self._write_rows([whitespace_typed])
+        before = self._bytes()
+        with self.assertRaises(PersistenceError) as ctx:
+            RecordCollection(self.path)
+        self.assertIn("record_type", str(ctx.exception))
+        self.assertEqual(self._bytes(), before)
+
+    def test_mixed_file_incompatible_record_type_after_valid_rows_rolls_back_fully(
+        self,
+    ) -> None:
+        client_without_type = {k: v for k, v in CLIENT_ROW.items() if k != "record_type"}
+        self._write_rows([client_without_type, AIRLINE_ROW])
+        col = RecordCollection(self.path)
+        baseline = [dict(r) for r in col.records]
+
+        self._write_rows(
+            [client_without_type, AIRLINE_ROW, {**CLIENT_ROW, "id": 2, "record_type": "vip"}]
+        )
+        before_bytes = self._bytes()
+        with self.assertRaises(PersistenceError):
+            col.load()
+        self.assertEqual(col.records, baseline)
+        self.assertEqual(self._bytes(), before_bytes)
+
+    def test_flight_rows_never_gain_a_record_type_key(self) -> None:
+        self._write_rows([CLIENT_ROW, AIRLINE_ROW, FLIGHT_ROW])
+        col = RecordCollection(self.path)
+        flight = next(r for r in col.records if "date" in r)
+        self.assertNotIn("record_type", flight)
+
+    def test_ambiguous_and_incomplete_rows_still_rejected_with_canonicalisation_present(
+        self,
+    ) -> None:
+        ambiguous = {**CLIENT_ROW, "company_name": "Also An Airline"}
+        self._write_rows([ambiguous])
+        with self.assertRaises(PersistenceError):
+            RecordCollection(self.path)
+        incomplete = {k: v for k, v in CLIENT_ROW.items() if k != "city"}
+        self._write_rows([incomplete])
+        with self.assertRaises(PersistenceError):
+            RecordCollection(self.path)
+
+    def test_mixed_file_invalid_row_after_valid_rows_rolls_back_fully(self) -> None:
+        client_without_type = {k: v for k, v in CLIENT_ROW.items() if k != "record_type"}
+        self._write_rows([client_without_type, AIRLINE_ROW])
+        col = RecordCollection(self.path)
+        baseline = [dict(r) for r in col.records]
+
+        self._write_rows([client_without_type, AIRLINE_ROW, {"broken": True}])
+        before_bytes = self._bytes()
+        with self.assertRaises(PersistenceError):
+            col.load()
+        self.assertEqual(col.records, baseline)
+        self.assertEqual(self._bytes(), before_bytes)
+
+    def test_canonicalised_record_type_survives_save_and_reload(self) -> None:
+        client_without_type = {k: v for k, v in CLIENT_ROW.items() if k != "record_type"}
+        self._write_rows([client_without_type])
+        col = RecordCollection(self.path)
+        col.save()
+
+        reloaded = RecordCollection(self.path)
+        self.assertEqual(reloaded.records[0]["record_type"], "client")
 
     def test_structurally_incomplete_row_raises_with_path_and_line(self) -> None:
         bad_client = {k: v for k, v in CLIENT_ROW.items() if k != "city"}
