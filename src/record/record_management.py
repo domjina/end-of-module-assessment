@@ -442,12 +442,6 @@ class FlightManagement(RecordManagement):
         )
 
     def update_record(self, data: dict, **criteria) -> bool:
-        payload = data.copy()
-
-        # Extract IDs from criteria or payload, popping them from payload so they aren't passed twice
-        client_id = criteria.get("client_id", payload.pop("client_id", None))
-        airline_id = criteria.get("airline_id", payload.pop("airline_id", None))
-
         current_flight = self.collection.find(
             client_id=criteria["client_id"],
             airline_id=criteria["airline_id"],
@@ -460,26 +454,28 @@ class FlightManagement(RecordManagement):
             return False
 
         proposed_flight = {
-            "client_id": client_id,
-            "airline_id": airline_id,
-            **data
+            "client_id": data["client_id"],
+            "airline_id": data["airline_id"],
+            "date": data["date"],
+            "start_city": data["start_city"],
+            "end_city": data["end_city"]
         }
 
         validate_flight(proposed_flight)
 
         client = self.collection.find(
             record_type=RecordType.CLIENT.value,
-            id=client_id
+            id=proposed_flight["client_id"]
         )
         airline = self.collection.find(
             record_type=RecordType.AIRLINE.value,
-            id=airline_id
+            id=proposed_flight["airline_id"]
         )
 
         if client is None:
-            raise ValueError(f"Client ID {client_id} does not exist")
+            raise ValueError(f"Client ID {proposed_flight['client_id']} does not exist")
         if airline is None:
-            raise ValueError(f"Airline ID {airline_id} does not exist")
+            raise ValueError(f"Airline ID {proposed_flight['airline_id']} does not exist")
 
         duplicate = self.collection.find(
             client_id=proposed_flight["client_id"],
@@ -496,11 +492,11 @@ class FlightManagement(RecordManagement):
 
         return self.collection.update(
             dataclasses.asdict(flight),
-            client_id=client_id,
-            airline_id=airline_id,
-            date=criteria.get("date", data.get("date")),
-            start_city=criteria.get("start_city", data.get("start_city")),
-            end_city=criteria.get("end_city", data.get("end_city"))
+            client_id=criteria["client_id"],
+            airline_id=criteria["airline_id"],
+            date=criteria["date"],
+            start_city=criteria["start_city"],
+            end_city=criteria["end_city"]
         )
 
     def search_display_record(self, **criteria) -> list[dict] | dict | None:
