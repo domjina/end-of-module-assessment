@@ -535,11 +535,8 @@ class FlightManagement(RecordManagement):
     def search_display_record(self, **criteria) -> list[dict]:
         active = {
             k: v for k, v in criteria.items()
-            if v != "" and v is not None
+            if k != "date" and v != "" and v is not None
         }
-
-        if not active:
-            return []
 
         results = []
 
@@ -547,15 +544,12 @@ class FlightManagement(RecordManagement):
             record_type = str(record.get("record_type", "")).strip().lower()
             if record_type not in ("", "none"):
                 continue
+
             matches = True
 
             for field, search_term in active.items():
                 record_value = str(record.get(field, "")).strip().lower()
                 search_value = str(search_term).strip().lower()
-
-                if field == "date":
-                    record_value = record_value.replace("t", " ").split()[0]
-                    search_value = search_value.replace("t", " ").split()[0]
 
                 if record_value != search_value:
                     matches = False
