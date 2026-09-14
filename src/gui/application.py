@@ -492,12 +492,12 @@ class RecordGUI(QMainWindow):
                         start_city=original_data.get("start_city"),
                         end_city=original_data.get("end_city")
                         )
-
-                success = self.record_manager.delete_record(
-                    record_type=record_type,
-                    record_id=record_id,
-                    row_index=selected_row 
-                )
+                else:
+                    success = self.record_manager.delete_record(
+                        record_type=record_type,
+                        record_id=record_id,
+                        row_index=selected_row
+                    )
 
                 if success:
                     self.refresh_table()
