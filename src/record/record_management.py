@@ -107,37 +107,37 @@ class RecordCollection:
                 search_term: str,
                 record_type: str | None = None
         ) -> list[dict]:
-            """Return all records whose specified field matches the search term exactly."""
-            matches = []
-            target_type = record_type.value if hasattr(record_type, "value") else str(record_type or "")
+        """Return all records whose specified field matches the search term exactly."""
+        matches = []
+        target_type = record_type.value if hasattr(record_type, "value") else str(record_type or "")
 
-            for record in self.records:
-                rec_type = str(record.get("record_type", "")).strip().lower()
-                target_clean = target_type.strip().lower()
+        for record in self.records:
+            rec_type = str(record.get("record_type", "")).strip().lower()
+            target_clean = target_type.strip().lower()
 
-                # If searching for flights (where record_type is "" or "flight"), 
-                # allow records whose stored record_type is missing/empty OR explicitly "flight"
-                if target_clean in ("", "flight"):
-                    if rec_type not in ("", "none", "flight"):
-                        continue
-                else:
-                    if rec_type != target_clean:
-                        continue
+            # If searching for flights (where record_type is "" or "flight"), 
+            # allow records whose stored record_type is missing/empty OR explicitly "flight"
+            if target_clean in ("", "flight"):
+                if rec_type not in ("", "none", "flight"):
+                    continue
+            else:
+                if rec_type != target_clean:
+                    continue
 
-                # Extract & clean field value + search term
-                rec_val = str(record.get(field, "")).strip().lower()
-                term = str(search_term).strip().lower()
+            # Extract & clean field value + search term
+            rec_val = str(record.get(field, "")).strip().lower()
+            term = str(search_term).strip().lower()
 
-                # Clean ISO / space date formats ("2026-09-13T00:00:00" -> "2026-09-13")
-                if field == "date":
-                    rec_val = rec_val.replace("t", " ").split()[0]
-                    term = term.replace("t", " ").split()[0]
+            # Clean ISO / space date formats ("2026-09-13T00:00:00" -> "2026-09-13")
+            if field == "date":
+                rec_val = rec_val.replace("t", " ").split()[0]
+                term = term.replace("t", " ").split()[0]
 
-                # 3. Exact match only
-                if rec_val == term:
-                    matches.append(record)
+            # 3. Exact match only
+            if rec_val == term:
+                matches.append(record)
 
-            return matches
+        return matches
 
     def save(self) -> None:
         """Write ``self.records`` to ``self.file_path`` atomically.
@@ -290,7 +290,7 @@ class RecordManagement(ABC):
         """Update a record matching the supplied criteria."""
 
     @abstractmethod
-    def search_display_record(self, **criteria) -> dict | None:
+    def search_display_record(self, **criteria) -> list[dict]:
         """Find and return a record matching the supplied criteria."""
 
 class ClientManagement(RecordManagement):
@@ -328,25 +328,36 @@ class ClientManagement(RecordManagement):
             id=record_id,
             record_type=RecordType.CLIENT.value
         )
-    
-    def search_display_record(self, **criteria) -> list[dict] | dict | None:
+
+    def search_display_record(self, **criteria) -> list[dict]:
         client_id = criteria.get("record_id") or criteria.get("id") or criteria.get("client_id")
-        if client_id:
-            return self.collection.find(
+        if client_id is not None:
+            result = self.collection.find(
                 record_type=RecordType.CLIENT.value,
                 id=client_id
             )
-        if criteria:
-            field, search_term = next(iter(criteria.items()))
-            
-            return self.collection.search(
-                field=field,
-                search_term=str(search_term),
-                record_type=RecordType.CLIENT.value
-            )
+            return [result] if result is not None else []
+        active = {
+            k: v for k, v in criteria.items()
+            if v != "" and v is not None
+        }
+        if not active:
+            return []
 
-        return []
-    
+        results = []
+
+        for record in self.collection.records:
+            if record.get("record_type") != RecordType.CLIENT.value:
+                continue
+
+            if all(
+                str(record.get(field, "")).strip().lower()
+                == str(value).strip().lower()
+                for field, value in active.items()
+            ):
+                results.append(record)
+        return results
+
 class AirlineManagement(RecordManagement):
     """Manage Airline records using a shared record collection."""
     def __init__(self, collection: RecordCollection):
@@ -380,23 +391,34 @@ class AirlineManagement(RecordManagement):
             record_type=RecordType.AIRLINE.value
         )
 
-    def search_display_record(self, **criteria) -> list[dict] | dict | None:
-        client_id = criteria.get("record_id") or criteria.get("id") or criteria.get("client_id")
-        if client_id:
-            return self.collection.find(
+    def search_display_record(self, **criteria) -> list[dict]:
+        airline_id = criteria.get("record_id") or criteria.get("id") or criteria.get("airline_id")
+        if airline_id is not None:
+            result = self.collection.find(
                 record_type=RecordType.AIRLINE.value,
-                id=client_id
+                id=airline_id
             )
-        if criteria:
-            field, search_term = next(iter(criteria.items()))
-            
-            return self.collection.search(
-                field=field,
-                search_term=str(search_term),
-                record_type=RecordType.AIRLINE.value
-            )
+            return [result] if result is not None else []
+        active = {
+            k: v for k, v in criteria.items()
+            if v != "" and v is not None
+        }
 
-        return []
+        if not active:
+            return []
+
+        results = []
+
+        for record in self.collection.records:
+            if record.get("record_type") != RecordType.AIRLINE.value:
+                continue
+            if all(
+                str(record.get(field, "")).strip().lower()
+                == str(value).strip().lower()
+                for field, value in active.items()
+            ):
+                results.append(record)
+        return results
 
 class FlightManagement(RecordManagement):
     """Manage Flight records using a shared record collection."""
@@ -499,29 +521,39 @@ class FlightManagement(RecordManagement):
             end_city=criteria["end_city"]
         )
 
-    def search_display_record(self, **criteria) -> list[dict] | dict | None:
-            flight_id = criteria.get("record_id") or criteria.get("id") or criteria.get("flight_id")
-            if flight_id:
-                return self.collection.find(
-                    record_type=RecordType.FLIGHT.value,
-                    id=flight_id
-                )
+    def search_display_record(self, **criteria) -> list[dict]:
+        active = {
+            k: v for k, v in criteria.items()
+            if v != "" and v is not None
+        }
 
-            non_date = {k: v for k, v in criteria.items() if k != "date" and str(v).strip() != ""}
-            active = non_date if non_date else {k: v for k, v in criteria.items() if str(v).strip() != ""}
+        if not active:
+            return []
 
-            if not active:
-                return []
+        results = []
 
-            field, raw_val = next(iter(active.items()))
-            search_term = str(raw_val).replace("T", " ").split()[0] if field == "date" else str(raw_val)
+        for record in self.collection.records:
+            record_type = str(record.get("record_type", "")).strip().lower()
+            if record_type not in ("", "none"):
+                continue
+            matches = True
 
-            return self.collection.search(
-                field=field,
-                search_term=search_term,
-                record_type=RecordType.FLIGHT.value
-            )
-        
+            for field, search_term in active.items():
+                record_value = str(record.get(field, "")).strip().lower()
+                search_value = str(search_term).strip().lower()
+
+                if field == "date":
+                    record_value = record_value.replace("t", " ").split()[0]
+                    search_value = search_value.replace("t", " ").split()[0]
+
+                if record_value != search_value:
+                    matches = False
+                    break
+
+            if matches:
+                results.append(record)
+
+        return results
 
 class RecordManager:
     """Coordinate record operations across different record types."""
@@ -554,7 +586,7 @@ class RecordManager:
         manager = self._get_management(record_type)
         return manager.update_record(data, **criteria)
 
-    def search_display_record(self, record_type: RecordType, **criteria) -> dict | None:
+    def search_display_record(self, record_type: RecordType, **criteria) -> list[dict]:
         """Find a record using the manager for the specified record type."""
         manager = self._get_management(record_type)
         return manager.search_display_record(**criteria)
