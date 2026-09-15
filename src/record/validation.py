@@ -248,14 +248,38 @@ def canonical_stored_record_type(record: dict) -> str | None:
     return _STORED_KIND_TO_RECORD_TYPE[kind]
 
 
-def resolve_stored_record_type(record: dict) -> str | None:
+class _StripRecordType:
+    """Sentinel: the caller must remove ``record_type`` entirely (Flight only).
+
+    Distinct from ``None`` (no change) and from a canonical string (insert
+    this value) so all three outcomes of ``resolve_stored_record_type`` stay
+    unambiguous.
+    """
+
+    def __repr__(self) -> str:  # pragma: no cover - debugging aid only
+        return "STRIP_RECORD_TYPE"
+
+
+STRIP_RECORD_TYPE = _StripRecordType()
+
+
+def resolve_stored_record_type(record: dict) -> "str | None | _StripRecordType":
     """Decide what, if anything, a stored row's ``record_type`` should become.
 
     Reuses ``canonical_stored_record_type`` for the structural kind, then
     applies compatibility evidence about the row's *own* ``record_type`` key:
 
-    * Flight (``canonical_stored_record_type`` is ``None``): never inspected,
-      never assigned. Returns ``None`` (no change).
+    * Flight (``canonical_stored_record_type`` is ``None``): Flight has never
+      defined this field (no brief field, no dataclass field, no consumer
+      reads it as a value -- only ``RecordType.FLIGHT`` exists, and solely as
+      a dispatch key elsewhere). A stray ``record_type`` key can only arise
+      from externally edited or malformed legacy JSONL -- never from this
+      application -- and ``test_stored_flight_without_id_or_record_type_is_valid``
+      already establishes that ``validate_stored_record`` tolerates it. That
+      test says nothing about the key surviving downstream, so a present key
+      is reported as ``STRIP_RECORD_TYPE`` for the caller to remove before the
+      record becomes visible to Search/ID-generation/saving; an absent key
+      returns ``None`` (no change; nothing is ever assigned for Flight).
     * Client/Airline, key absent entirely: the only case with existing,
       committed evidence for auto-correction (``validate_stored_record``
       itself deliberately treats a missing ``record_type`` as loadable --
@@ -277,6 +301,8 @@ def resolve_stored_record_type(record: dict) -> str | None:
     """
     canonical = canonical_stored_record_type(record)
     if canonical is None:
+        if "record_type" in record:
+            return STRIP_RECORD_TYPE
         return None
     if "record_type" not in record:
         return canonical

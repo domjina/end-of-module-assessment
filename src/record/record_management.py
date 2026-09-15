@@ -14,6 +14,7 @@ from src.record.validation import (
     ValidationError,
     validate_stored_record,
     resolve_stored_record_type,
+    STRIP_RECORD_TYPE,
 )
 from src.record.validation import (
     validate_client,
@@ -267,7 +268,9 @@ class RecordCollection:
                     raise PersistenceError(
                         f"{self.file_path}:{line_number}: {exc}"
                     ) from exc
-                if canonical_type is not None:
+                if canonical_type is STRIP_RECORD_TYPE:
+                    del record["record_type"]
+                elif canonical_type is not None:
                     record["record_type"] = canonical_type
                 parsed.append(record)
 

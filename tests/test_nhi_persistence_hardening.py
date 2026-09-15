@@ -379,6 +379,36 @@ class LoadHardening(unittest.TestCase):
         flight = next(r for r in col.records if "date" in r)
         self.assertNotIn("record_type", flight)
 
+    def test_stray_flight_record_type_is_stripped_and_stays_searchable(self) -> None:
+        # Flight has never defined a record_type field (no brief field, no
+        # dataclass field); a stray key can only arise from externally edited
+        # JSONL. validate_stored_record already tolerates it
+        # (test_stored_flight_without_id_or_record_type_is_valid); loading
+        # must additionally remove it before the record is visible anywhere.
+        stray_flight = {**FLIGHT_ROW, "record_type": "flight"}
+        self._write_rows([CLIENT_ROW, AIRLINE_ROW, stray_flight])
+        col = RecordCollection(self.path)
+        mgr = RecordManager(col)
+
+        flight = next(r for r in col.records if "date" in r)
+        self.assertNotIn("record_type", flight)
+        found = mgr.search_display_record(
+            RecordType.FLIGHT, start_city=FLIGHT_ROW["start_city"]
+        )
+        self.assertEqual(len(found), 1)
+
+    def test_stripped_flight_record_type_survives_save_and_reload(self) -> None:
+        stray_flight = {**FLIGHT_ROW, "record_type": "flight"}
+        self._write_rows([CLIENT_ROW, AIRLINE_ROW, stray_flight])
+        col = RecordCollection(self.path)
+        col.save()
+
+        reloaded = RecordCollection(self.path)
+        flight = next(r for r in reloaded.records if "date" in r)
+        self.assertNotIn("record_type", flight)
+        found = RecordManager(reloaded).search_display_record(RecordType.FLIGHT)
+        self.assertEqual(len(found), 1)
+
     def test_ambiguous_and_incomplete_rows_still_rejected_with_canonicalisation_present(
         self,
     ) -> None:
