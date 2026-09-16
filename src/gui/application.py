@@ -21,6 +21,7 @@ from PyQt6.QtWidgets import (
 )
 
 from src.record.record_management import (
+    PersistenceError,
     RecordCollection,
     RecordManager
 )
@@ -654,3 +655,13 @@ class RecordGUI(QMainWindow):
                         record_data[field_name] = val
 
             return record_data
+
+    def closeEvent(self, event):
+        try:
+            self.collector.save()
+        except PersistenceError as e:
+            QMessageBox.warning(self, "Save Error", f"Failed to save records on close:\n{e}")
+            event.ignore()
+            return
+
+        event.accept()
